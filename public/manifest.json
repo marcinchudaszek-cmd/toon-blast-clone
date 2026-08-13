@@ -1,0 +1,18 @@
+{
+  "name": "ToonBlast",
+  "short_name": "ToonBlast",
+  "description": "Colorful block-blast puzzle game",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1e3a8a",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

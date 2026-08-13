@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.apk
+*.aab
+
+# ── Signing material — MUST NEVER be committed ──
+# The keystore is the app's identity: anyone holding it can publish an APK that
+# Android accepts as a genuine update to com.toonblast.game. Keep it (and the
+# passwords that unlock it) on the build machine only.
+android/release.keystore
+*.keystore
+*.jks
+keystore.properties
+
+# Android local/machine-specific and build artifacts
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/.idea/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+.gradle/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

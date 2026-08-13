@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ToonBlast</string>
+    <string name="title_activity_main">ToonBlast</string>
+    <string name="package_name">com.toonblast.game</string>
+    <string name="custom_url_scheme">com.toonblast.game</string>
+</resources>
