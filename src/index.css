@@ -1,5 +1,32 @@
 @import "tailwindcss";
 
+/* Wcięcia ekranu. WebView < 140 podaje błędne env(safe-area-inset-*), więc
+   najpierw zmienne wstrzykiwane przez Capacitor 8 (SystemBars), env() jako zapas. */
+:root {
+  --sa-top:    var(--safe-area-inset-top,    env(safe-area-inset-top, 0px));
+  --sa-right:  var(--safe-area-inset-right,  env(safe-area-inset-right, 0px));
+  --sa-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sa-left:   var(--safe-area-inset-left,   env(safe-area-inset-left, 0px));
+}
+
+/* Cel dotykowy min. 44x44 px bez zmiany wyglądu: niewidoczny pseudo-element. */
+@layer base {
+  button { position: relative; }
+  button::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  /* W rzędach i siatkach (np. dni w kalendarzu) powiększone pole późniejszego
+     przycisku przykrywało brzeg sąsiada i przejmowało jego dotknięcia. */
+  button:has(+ button)::after,
+  button + button::after { content: none; }
+}
+
 /* ── Display typeface ──
    Fredoka, bundled locally (see src/assets/fonts/README.md) rather than pulled
    from a CDN: the game ships as an offline APK, so a webfont request would
@@ -54,17 +81,17 @@ body {
    The device insets are *added* to each screen's own padding rather than
    replacing it, so the layout is unchanged on hardware without cutouts. */
 .safe-game {
-  padding-top: calc(0.75rem + env(safe-area-inset-top, 0px));
-  padding-right: calc(0.75rem + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(0.75rem + env(safe-area-inset-left, 0px));
+  padding-top: calc(0.75rem + var(--sa-top));
+  padding-right: calc(0.75rem + var(--sa-right));
+  padding-bottom: calc(1.5rem + var(--sa-bottom));
+  padding-left: calc(0.75rem + var(--sa-left));
 }
 
 .safe-menu {
-  padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
-  padding-right: calc(1.5rem + env(safe-area-inset-right, 0px));
-  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(1.5rem + env(safe-area-inset-left, 0px));
+  padding-top: calc(1.5rem + var(--sa-top));
+  padding-right: calc(1.5rem + var(--sa-right));
+  padding-bottom: calc(1.5rem + var(--sa-bottom));
+  padding-left: calc(1.5rem + var(--sa-left));
 }
 
 /* Respect the OS "reduce motion" setting: keep the game readable, drop the

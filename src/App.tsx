@@ -178,7 +178,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-400 via-blue-600 to-indigo-800 flex flex-col items-center justify-start safe-game relative overflow-hidden">
+    <div className="min-h-dvh bg-gradient-to-b from-sky-400 via-blue-600 to-indigo-800 flex flex-col items-center justify-start safe-game relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-6 left-4 w-20 h-8 bg-white/25 rounded-full blur-sm" />

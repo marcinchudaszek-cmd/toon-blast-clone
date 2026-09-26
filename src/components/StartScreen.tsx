@@ -87,7 +87,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   const unlockedSet = new Set(unlockedAchievements);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-400 via-blue-500 to-indigo-700 flex flex-col items-center justify-center safe-menu relative overflow-hidden">
+    <div className="min-h-dvh bg-gradient-to-b from-sky-400 via-blue-500 to-indigo-700 flex flex-col items-center justify-center safe-menu relative overflow-hidden">
       {/* Background blobs */}
       <div className="absolute top-10 left-5 w-20 h-10 bg-white/30 rounded-full blur-sm animate-pulse" />
       <div className="absolute top-20 right-10 w-16 h-8 bg-white/20 rounded-full blur-sm animate-pulse" style={{ animationDelay: '300ms' }} />
