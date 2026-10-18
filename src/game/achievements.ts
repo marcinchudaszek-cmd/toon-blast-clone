@@ -92,6 +92,20 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     isUnlocked: p => p.stats.totalScore >= 50000,
   },
   {
+    id: 'balloon_party',
+    emoji: '🎈',
+    title: 'Balonowy szał',
+    description: 'Pęknij łącznie 50 balonów.',
+    isUnlocked: p => p.stats.balloonsPopped >= 50,
+  },
+  {
+    id: 'duck_hero',
+    emoji: '🦆',
+    title: 'Ratownik kaczek',
+    description: 'Uratuj łącznie 20 kaczek.',
+    isUnlocked: p => p.stats.ducksRescued >= 20,
+  },
+  {
     id: 'dedicated',
     emoji: '📅',
     title: 'Stały bywalec',

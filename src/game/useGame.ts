@@ -4,22 +4,20 @@ import {
   createBoard,
   findGroup,
   getPowerUpForGroup,
-  applyGravity,
   applyRocket,
   applyBomb,
   applyDisco,
   applyCombo,
-  removeCells,
   countByColor,
-  checkWin,
   createPowerUpCell,
-  damageCrates,
-  damageIce,
   calculateStars,
   hasValidMoves,
   shuffleBoard,
-  countStonesHit,
   placeStartPowerUps,
+  resolveBlast,
+  applyObjectives,
+  goalsMet,
+  BlastHits,
 } from './logic';
 import { LEVELS } from './levels';
 import { GameProgress, loadProgress, saveProgress, clearProgress, todayKey } from './storage';
@@ -52,7 +50,8 @@ function initLevel(levelIdx: number, prevScore = 0): GameState {
   const config = LEVELS[levelIdx];
   let board = createBoard(
     config.rows, config.cols,
-    config.crates ?? 0, config.iceCells ?? 0, config.stones ?? 0
+    config.crates ?? 0, config.iceCells ?? 0, config.stones ?? 0,
+    config.balloons ?? 0, config.ducks ?? 0,
   );
   // A freshly dealt board can be born without a legal move; never hand the
   // player one they cannot touch.
@@ -63,6 +62,7 @@ function initLevel(levelIdx: number, prevScore = 0): GameState {
     moves: config.moves,
     level: levelIdx + 1,
     targets: { ...config.targets },
+    objectives: { ...(config.goals ?? {}) },
     gameStatus: 'playing',
     combo: 0,
     animating: false,
@@ -89,6 +89,24 @@ function endOfMove(won: boolean, finalMoves: number): { gameStatus: GameState['g
 /** Points per leftover move, and how many are shown as rockets before the rest are cashed in at once. */
 export const FINALE_POINTS_PER_MOVE = 100;
 const FINALE_MAX_ROCKETS = 10;
+
+/** Points for obstacles a move took out (stones only yield to power-ups, so they pay most). */
+function obstaclePoints(h: BlastHits): number {
+  return h.crate * 100 + h.ice * 50 + h.balloon * 60 + h.duck * 250 + h.stone * 120;
+}
+
+/** Subtracts a move's cleared colors from the color goals. */
+function applyColors(
+  targets: Partial<Record<CellColor, number>>,
+  removed: Partial<Record<CellColor, number>>,
+): Partial<Record<CellColor, number>> {
+  const out = { ...targets };
+  Object.entries(removed).forEach(([color, count]) => {
+    const c = color as CellColor;
+    if (c in out) out[c] = Math.max(0, (out[c] ?? 0) - (count ?? 0));
+  });
+  return out;
+}
 
 /** Moves granted by a "+5 moves" second chance after running dry. */
 export const SECOND_CHANCE_MOVES = 5;
@@ -176,29 +194,20 @@ function gameReducer(state: GameState, action: Action): GameState {
         if (positions.length === 0) return { ...state, activeBooster: null };
 
         const removed = countByColor(state.board, positions);
-        let explodingBoard = removeCells(cleanBoard, positions);
-        const { board: boardAfterCrates, destroyed } = damageCrates(explodingBoard, positions);
-        explodingBoard = boardAfterCrates;
-        const { board: boardAfterIce, broken: iceBroken } = damageIce(explodingBoard, positions);
-        explodingBoard = boardAfterIce;
+        const blast = resolveBlast(cleanBoard, positions);
+        const finalTargets = applyColors(state.targets, removed);
+        const finalObjectives = applyObjectives(state.objectives, blast.hits);
 
-        const finalBoard = applyGravity(explodingBoard);
-        const finalTargets = { ...state.targets };
-        Object.entries(removed).forEach(([color, count]) => {
-          const c = color as CellColor;
-          if (c in finalTargets) finalTargets[c] = Math.max(0, (finalTargets[c] ?? 0) - count);
-        });
-
-        const scoreGain = positions.length * 80 + destroyed.length * 100 + iceBroken.length * 50;
+        const scoreGain = positions.length * 80 + obstaclePoints(blast.hits);
         const finalMoves = state.moves - 1;
-        const end = endOfMove(checkWin(finalTargets), finalMoves);
-        const bonusPoints = 0;
+        const end = endOfMove(goalsMet(finalTargets, finalObjectives), finalMoves);
 
         const pending: PendingState = {
-          board: finalBoard,
+          board: blast.final,
           score: state.score + scoreGain,
           moves: finalMoves,
           targets: finalTargets,
+          objectives: finalObjectives,
           gameStatus: end.gameStatus,
           combo: 0,
         };
@@ -206,12 +215,14 @@ function gameReducer(state: GameState, action: Action): GameState {
           cellsCleared: positions.length,
           powerUpsActivated: 0,
           combosTriggered: 0,
-          cratesDestroyed: destroyed.length,
-          iceBroken: iceBroken.length,
+          cratesDestroyed: blast.hits.crate,
+          iceBroken: blast.hits.ice,
+          balloonsPopped: blast.hits.balloon,
+          ducksRescued: blast.hits.duck,
           comboReached: 0,
-          scoreGained: scoreGain + bonusPoints,
+          scoreGained: scoreGain,
         });
-        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
+        return { ...state, board: blast.exploding, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
       }
       // hammer: arm it, wait for TAP_CELL
       return { ...state, activeBooster: action.booster };
@@ -237,34 +248,27 @@ function gameReducer(state: GameState, action: Action): GameState {
 
       // ── Hammer booster: remove single cell, no move consumed ──
       if (state.activeBooster === 'hammer') {
-        if (cell.color === null && cell.type !== 'crate') return { ...state, activeBooster: null };
+        // Any colored block, crate, balloon or stone; ducks can only be rescued, not smashed
+        if (cell.color === null && !['crate', 'balloon', 'stone'].includes(cell.type)) return { ...state, activeBooster: null };
 
         const cleanBoard = state.board.map(r =>
           r.map(c => ({ ...c, exploding: false, new: false, fallDistance: undefined }))
         );
         const positions: [number, number][] = [[row, col]];
         const removed = countByColor(state.board, positions);
-        let explodingBoard = removeCells(cleanBoard, positions);
-        const { board: boardAfterCrates, destroyed } = damageCrates(explodingBoard, positions);
-        explodingBoard = boardAfterCrates;
-        const { board: boardAfterIce, broken: iceBroken } = damageIce(explodingBoard, positions);
-        explodingBoard = boardAfterIce;
-        const finalBoard = applyGravity(explodingBoard);
+        const blast = resolveBlast(cleanBoard, positions);
+        const finalTargets = applyColors(state.targets, removed);
+        const finalObjectives = applyObjectives(state.objectives, blast.hits);
 
-        const finalTargets = { ...state.targets };
-        Object.entries(removed).forEach(([color, count]) => {
-          const c = color as CellColor;
-          if (c in finalTargets) finalTargets[c] = Math.max(0, (finalTargets[c] ?? 0) - count);
-        });
-
-        const scoreGain = 50 + destroyed.length * 100 + iceBroken.length * 50;
-        const end = endOfMove(checkWin(finalTargets), state.moves);
+        const scoreGain = 50 + obstaclePoints(blast.hits);
+        const end = endOfMove(goalsMet(finalTargets, finalObjectives), state.moves);
         // hammer doesn't consume a move
         const pending: PendingState = {
-          board: finalBoard,
+          board: blast.final,
           score: state.score + scoreGain,
           moves: state.moves,
           targets: finalTargets,
+          objectives: finalObjectives,
           gameStatus: end.gameStatus === 'lost' ? 'playing' : end.gameStatus,
           combo: 0,
         };
@@ -272,12 +276,14 @@ function gameReducer(state: GameState, action: Action): GameState {
           cellsCleared: positions.length,
           powerUpsActivated: 0,
           combosTriggered: 0,
-          cratesDestroyed: destroyed.length,
-          iceBroken: iceBroken.length,
+          cratesDestroyed: blast.hits.crate,
+          iceBroken: blast.hits.ice,
+          balloonsPopped: blast.hits.balloon,
+          ducksRescued: blast.hits.duck,
           comboReached: 0,
           scoreGained: scoreGain,
         });
-        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
+        return { ...state, board: blast.exploding, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
       }
 
       // ── Normal tap ──
@@ -365,37 +371,29 @@ function gameReducer(state: GameState, action: Action): GameState {
       }
 
       const removed = countByColor(state.board, positions);
-      let explodingBoard = removeCells(cleanBoard, positions);
-      const { board: boardAfterCrates, destroyed } = damageCrates(explodingBoard, positions);
-      explodingBoard = boardAfterCrates;
-      const { board: boardAfterIce, broken: iceBroken } = damageIce(explodingBoard, positions);
-      explodingBoard = boardAfterIce;
-      // Stones only ever fall to a power-up, so they are worth rewarding well.
-      const stonesHit = countStonesHit(cleanBoard, positions);
-      scoreGain += destroyed.length * 100 + iceBroken.length * 50 + stonesHit * 120;
+      const blast = resolveBlast(cleanBoard, positions);
+      scoreGain += obstaclePoints(blast.hits);
 
-      let finalBoard = applyGravity(explodingBoard);
+      const finalBoard = blast.final;
       if (powerUpType !== 'normal' && powerUpColor) {
         const puRow = Math.min(powerUpRow, finalBoard.length - 1);
-        finalBoard[puRow][powerUpCol] = createPowerUpCell(puRow, powerUpCol, powerUpColor, powerUpType);
+        // never overwrite a duck or an obstacle that fell into that spot
+        if (finalBoard[puRow][powerUpCol].type === 'normal') {
+          finalBoard[puRow][powerUpCol] = createPowerUpCell(puRow, powerUpCol, powerUpColor, powerUpType);
+        }
       }
 
-      const finalTargets = { ...state.targets };
-      Object.entries(removed).forEach(([color, count]) => {
-        const c = color as CellColor;
-        if (c in finalTargets) {
-          finalTargets[c] = Math.max(0, (finalTargets[c] ?? 0) - count);
-        }
-      });
-
+      const finalTargets = applyColors(state.targets, removed);
+      const finalObjectives = applyObjectives(state.objectives, blast.hits);
       const finalMoves = state.moves - 1;
-      const end = endOfMove(checkWin(finalTargets), finalMoves);
+      const end = endOfMove(goalsMet(finalTargets, finalObjectives), finalMoves);
 
       const pending: PendingState = {
         board: finalBoard,
         score: state.score + scoreGain,
         moves: finalMoves,
         targets: finalTargets,
+        objectives: finalObjectives,
         gameStatus: end.gameStatus,
         combo,
       };
@@ -404,13 +402,15 @@ function gameReducer(state: GameState, action: Action): GameState {
         cellsCleared: positions.length,
         powerUpsActivated: powerUpsActivatedCount,
         combosTriggered: combosTriggeredCount,
-        cratesDestroyed: destroyed.length,
-        iceBroken: iceBroken.length,
+        cratesDestroyed: blast.hits.crate,
+        iceBroken: blast.hits.ice,
+        balloonsPopped: blast.hits.balloon,
+        ducksRescued: blast.hits.duck,
         comboReached: combo,
         scoreGained: scoreGain,
       });
 
-      return { ...state, board: explodingBoard, animating: true, pending, statsDelta, winMoves: end.winMoves };
+      return { ...state, board: blast.exploding, animating: true, pending, statsDelta, winMoves: end.winMoves };
     }
 
     case 'BEGIN_LEVEL': {
@@ -440,20 +440,19 @@ function gameReducer(state: GameState, action: Action): GameState {
       }
       const [row, col] = candidates[Math.floor(Math.random() * candidates.length)];
       const positions = applyRocket(cleanBoard, row, col);
-      let explodingBoard = removeCells(cleanBoard, positions);
-      explodingBoard = damageCrates(explodingBoard, positions).board;
-      explodingBoard = damageIce(explodingBoard, positions).board;
-      const gain = FINALE_POINTS_PER_MOVE + positions.length * 10;
+      const blast = resolveBlast(cleanBoard, positions);
+      const gain = FINALE_POINTS_PER_MOVE + positions.length * 10 + obstaclePoints(blast.hits);
       playPowerUpActivate('rocket');
       const pending: PendingState = {
-        board: applyGravity(explodingBoard),
+        board: blast.final,
         score: score + gain,
         moves: moves - 1,
         targets: state.targets,
+        objectives: state.objectives,
         gameStatus: moves - 1 > 0 ? 'finale' : 'won',
         combo: 0,
       };
-      return { ...state, score, moves, board: explodingBoard, animating: true, pending };
+      return { ...state, score, moves, board: blast.exploding, animating: true, pending };
     }
 
     default:
@@ -467,6 +466,7 @@ const initialState: GameState = {
   moves: 20,
   level: 1,
   targets: { red: 10, blue: 10 },
+  objectives: {},
   gameStatus: 'idle',
   combo: 0,
   animating: false,
@@ -567,6 +567,8 @@ export function useGame() {
           combosTriggered: prev.stats.combosTriggered + delta.combosTriggered,
           cratesDestroyed: prev.stats.cratesDestroyed + delta.cratesDestroyed,
           iceBroken: prev.stats.iceBroken + delta.iceBroken,
+          balloonsPopped: prev.stats.balloonsPopped + delta.balloonsPopped,
+          ducksRescued: prev.stats.ducksRescued + delta.ducksRescued,
           bestCombo: Math.max(prev.stats.bestCombo, delta.comboReached),
         },
       };

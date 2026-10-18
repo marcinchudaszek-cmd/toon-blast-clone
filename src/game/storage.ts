@@ -7,6 +7,8 @@ export interface PlayerStats {
   combosTriggered: number;   // total power-up "mega combo" triggers
   cratesDestroyed: number;
   iceBroken: number;
+  balloonsPopped: number;
+  ducksRescued: number;
   bestCombo: number;         // highest combo streak ever reached
   levelsCompleted: number;   // total level-win events (replays count)
 }
@@ -42,6 +44,8 @@ const DEFAULT_STATS: PlayerStats = {
   combosTriggered: 0,
   cratesDestroyed: 0,
   iceBroken: 0,
+  balloonsPopped: 0,
+  ducksRescued: 0,
   bestCombo: 0,
   levelsCompleted: 0,
 };
@@ -87,6 +91,8 @@ export function loadProgress(): GameProgress {
         combosTriggered:   typeof p.stats?.combosTriggered   === 'number' ? p.stats.combosTriggered   : DEFAULT_STATS.combosTriggered,
         cratesDestroyed:   typeof p.stats?.cratesDestroyed   === 'number' ? p.stats.cratesDestroyed   : DEFAULT_STATS.cratesDestroyed,
         iceBroken:         typeof p.stats?.iceBroken         === 'number' ? p.stats.iceBroken         : DEFAULT_STATS.iceBroken,
+        balloonsPopped:    typeof p.stats?.balloonsPopped    === 'number' ? p.stats.balloonsPopped    : 0,
+        ducksRescued:      typeof p.stats?.ducksRescued      === 'number' ? p.stats.ducksRescued      : 0,
         bestCombo:         typeof p.stats?.bestCombo         === 'number' ? p.stats.bestCombo         : DEFAULT_STATS.bestCombo,
         levelsCompleted:   typeof p.stats?.levelsCompleted   === 'number' ? p.stats.levelsCompleted   : DEFAULT_STATS.levelsCompleted,
       },

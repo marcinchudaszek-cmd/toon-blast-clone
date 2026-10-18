@@ -288,7 +288,7 @@ export default function App() {
       {/* Targets */}
       <div className="w-full max-w-md mb-3 relative z-10">
         <p className="text-white/60 text-xs text-center mb-2 uppercase tracking-widest font-semibold">🎯 Cele</p>
-        <TargetPanel targets={state.targets} />
+        <TargetPanel targets={state.targets} objectives={state.objectives} />
       </div>
 
       {/* Game Board */}
@@ -431,6 +431,8 @@ export default function App() {
           levelName={levelName}
           moves={state.moves}
           targets={state.targets}
+          objectives={state.objectives}
+          difficulty={levelConfig?.difficulty}
           winStreak={progress.winStreak}
           streakGift={streakPowerUps}
           boosterTypes={startBoosterTypes}

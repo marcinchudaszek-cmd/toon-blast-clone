@@ -110,6 +110,30 @@ export const GameCell: React.FC<GameCellProps> = ({ cell, size, onClick }) => {
     );
   }
 
+  // Balloon — pops when anything next to it is cleared
+  if (cell.type === 'balloon') {
+    return (
+      <div
+        style={{ width: size, height: size }}
+        className="rounded-xl flex items-center justify-center select-none bg-pink-300/25 border border-pink-200/40"
+      >
+        <span className="animate-rock" style={{ fontSize: size * 0.72, lineHeight: 1 }}>🎈</span>
+      </div>
+    );
+  }
+
+  // Duck — cannot be blasted; clear the cells under it to bring it down
+  if (cell.type === 'duck') {
+    return (
+      <div
+        style={{ width: size, height: size, boxShadow: '0 0 12px rgba(253,224,71,0.55)' }}
+        className="rounded-xl flex items-center justify-center select-none bg-yellow-200/30 border-2 border-yellow-300/70"
+      >
+        <span style={{ fontSize: size * 0.72, lineHeight: 1 }}>🦆</span>
+      </div>
+    );
+  }
+
   // Ice cell — colored block frozen under ice overlay
   if (cell.type === 'ice') {
     const colors = COLOR_CLASSES[cell.color!] ?? COLOR_CLASSES['blue'];

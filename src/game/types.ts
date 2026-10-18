@@ -2,7 +2,11 @@ export type CellColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange
 
 export type PowerUpType = 'rocket' | 'bomb' | 'disco';
 
-export type CellType = 'normal' | 'rocket' | 'bomb' | 'disco' | 'empty' | 'crate' | 'ice' | 'stone';
+export type CellType = 'normal' | 'rocket' | 'bomb' | 'disco' | 'empty' | 'crate' | 'ice' | 'stone' | 'balloon' | 'duck';
+
+/** Obstacle goals a level can ask for, next to the color goals. */
+export type ObjectiveKind = 'crate' | 'ice' | 'balloon' | 'duck';
+export type Objectives = Partial<Record<ObjectiveKind, number>>;
 
 export type BoosterType = 'hammer' | 'extraMoves' | 'colorBomb';
 
@@ -28,6 +32,10 @@ export interface LevelConfig {
   crates?: number; // how many crates to place randomly
   iceCells?: number; // how many ice-frozen cells to place randomly
   stones?: number; // how many stone blocks to place randomly (power-ups only)
+  balloons?: number; // pop when something next to them is cleared
+  ducks?: number; // fall with the board; rescued on reaching the bottom row
+  goals?: Objectives; // obstacle goals (all must reach 0 to win)
+  difficulty?: 'hard' | 'superhard';
 }
 
 // Lightweight, fire-once-per-action bookkeeping event consumed by useGame to
@@ -40,6 +48,8 @@ export interface StatsDelta {
   combosTriggered: number;
   cratesDestroyed: number;
   iceBroken: number;
+  balloonsPopped: number;
+  ducksRescued: number;
   comboReached: number;
   scoreGained: number;
 }
@@ -49,6 +59,7 @@ export interface PendingState {
   score: number;
   moves: number;
   targets: Partial<Record<CellColor, number>>;
+  objectives: Objectives; // remaining obstacle goals
   // 'finale': level already won, leftover moves are being fired as rockets
   gameStatus: 'playing' | 'finale' | 'won' | 'lost' | 'idle';
   combo: number;
@@ -60,6 +71,7 @@ export interface GameState {
   moves: number;
   level: number;
   targets: Partial<Record<CellColor, number>>;
+  objectives: Objectives; // remaining obstacle goals
   // 'finale': level already won, leftover moves are being fired as rockets
   gameStatus: 'playing' | 'finale' | 'won' | 'lost' | 'idle';
   combo: number;

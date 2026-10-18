@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { CellColor } from '../game/types';
+import { CellColor, ObjectiveKind, Objectives } from '../game/types';
+import { OBJECTIVE_INFO } from './TargetPanel';
 import { StartBooster, START_BOOSTER_INFO } from '../game/rewards';
 
 const COLOR_EMOJIS: Record<CellColor, string> = {
@@ -11,6 +12,8 @@ interface Props {
   levelName: string;
   moves: number;
   targets: Partial<Record<CellColor, number>>;
+  objectives: Objectives;
+  difficulty?: 'hard' | 'superhard';
   winStreak: number;
   streakGift: StartBooster[];
   boosterTypes: StartBooster[];
@@ -24,7 +27,7 @@ interface Props {
  * from the win streak, and the player's own pre-level boosters to pick from.
  */
 export const PreLevelModal: React.FC<Props> = ({
-  level, levelName, moves, targets, winStreak, streakGift, boosterTypes, inventory, onStart, onMenu,
+  level, levelName, moves, targets, objectives, difficulty, winStreak, streakGift, boosterTypes, inventory, onStart, onMenu,
 }) => {
   const [picked, setPicked] = useState<StartBooster[]>([]);
   const toggle = (b: StartBooster) =>
@@ -36,6 +39,11 @@ export const PreLevelModal: React.FC<Props> = ({
         <div className="inline-block bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-black px-3 py-1 rounded-full shadow-lg">
           Poziom {level}
         </div>
+        {difficulty && (
+          <div className="mt-2 inline-block ml-2 bg-gradient-to-r from-red-500 to-rose-700 text-white text-xs font-black px-3 py-1 rounded-full shadow-lg">
+            {difficulty === 'superhard' ? '☠️ Bardzo trudny' : '💀 Trudny'}
+          </div>
+        )}
         <h2 className="text-white font-black text-2xl mt-2" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.35)' }}>{levelName}</h2>
 
         <div className="mt-3 bg-white/10 rounded-2xl p-3 border border-white/15">
@@ -44,6 +52,11 @@ export const PreLevelModal: React.FC<Props> = ({
             {Object.entries(targets).map(([color, n]) => (
               <span key={color} className="text-white font-black text-lg">
                 {COLOR_EMOJIS[color as CellColor]} {n}
+              </span>
+            ))}
+            {(Object.entries(objectives) as [ObjectiveKind, number][]).map(([k, n]) => (
+              <span key={k} className="text-white font-black text-lg" title={OBJECTIVE_INFO[k].label}>
+                {OBJECTIVE_INFO[k].icon} {n}
               </span>
             ))}
           </div>

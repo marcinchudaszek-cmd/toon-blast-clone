@@ -1,4 +1,4 @@
-import { Cell, CellColor, CellType } from './types';
+import { Cell, CellColor, CellType, Objectives, ObjectiveKind } from './types';
 
 const COLORS: CellColor[] = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
 
@@ -54,7 +54,22 @@ export function createStone(row: number, col: number): Cell {
   };
 }
 
-export function createBoard(rows: number, cols: number, crateCount = 0, iceCount = 0, stoneCount = 0): Cell[][] {
+/** Balloon: colorless, falls with the board, pops when anything next to it (or on it) is cleared. */
+export function createBalloon(row: number, col: number): Cell {
+  return { id: genId(), color: null, type: 'balloon', row, col };
+}
+
+/**
+ * Duck: colorless and indestructible — blasts pass it by. It falls as the board
+ * clears beneath it and is rescued when it reaches the bottom row.
+ */
+export function createDuck(row: number, col: number): Cell {
+  return { id: genId(), color: null, type: 'duck', row, col };
+}
+
+export function createBoard(
+  rows: number, cols: number, crateCount = 0, iceCount = 0, stoneCount = 0, balloonCount = 0, duckCount = 0,
+): Cell[][] {
   const board = Array.from({ length: rows }, (_, r) =>
     Array.from({ length: cols }, (_, c) => createCell(r, c))
   );
@@ -110,6 +125,29 @@ export function createBoard(rows: number, cols: number, crateCount = 0, iceCount
     stoneCandidates.slice(0, stoneCount).forEach(([r, c]) => {
       board[r][c] = createStone(r, c);
     });
+  }
+
+  if (balloonCount > 0) {
+    // Balloons float in the middle band, among plain cells
+    const cand: [number, number][] = [];
+    for (let r = Math.floor(rows / 4); r < rows - 1; r++)
+      for (let c = 0; c < cols; c++)
+        if (board[r][c].type === 'normal') cand.push([r, c]);
+    for (let i = cand.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cand[i], cand[j]] = [cand[j], cand[i]];
+    }
+    cand.slice(0, balloonCount).forEach(([r, c]) => { board[r][c] = createBalloon(r, c); });
+  }
+
+  if (duckCount > 0) {
+    // Ducks start on the top row, each in its own column
+    const order = Array.from({ length: cols }, (_, c) => c);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    order.slice(0, Math.min(duckCount, cols)).forEach(c => { board[0][c] = createDuck(0, c); });
   }
 
   return board;
@@ -435,7 +473,7 @@ export function removeCells(board: Cell[][], positions: [number, number][]): Cel
   
   for (let r = 0; r < newBoard.length; r++) {
     for (let c = 0; c < newBoard[r].length; c++) {
-      if (posSet.has(`${r},${c}`)) {
+      if (posSet.has(`${r},${c}`) && newBoard[r][c].type !== 'duck') {
         newBoard[r][c] = {
           ...newBoard[r][c],
           type: 'empty',
@@ -584,4 +622,104 @@ export function placeStartPowerUps(board: Cell[][], types: CellType[]): Cell[][]
     out[r][c] = createPowerUpCell(r, c, out[r][c].color as CellColor, type);
   });
   return out;
+}
+
+// ─── Balloons, ducks, obstacle goals ────────────────────────────────────────
+
+/** Distinct cells of `type` caught directly in a blast. */
+export function countTypeHit(board: Cell[][], positions: [number, number][], type: CellType): number {
+  const seen = new Set<string>();
+  let hits = 0;
+  for (const [r, c] of positions) {
+    const key = `${r},${c}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (board[r]?.[c]?.type === type) hits++;
+  }
+  return hits;
+}
+
+/** Pops balloons next to cleared cells. */
+export function damageBalloons(
+  board: Cell[][],
+  clearedPositions: [number, number][],
+): { board: Cell[][]; popped: [number, number][] } {
+  const newBoard = board.map(row => row.map(cell => ({ ...cell })));
+  const popped: [number, number][] = [];
+  for (const [r, c] of clearedPositions) {
+    for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nr = r + dr, nc = c + dc;
+      const n = newBoard[nr]?.[nc];
+      if (!n || n.type !== 'balloon') continue;
+      newBoard[nr][nc] = { ...n, type: 'empty', color: null, exploding: true };
+      popped.push([nr, nc]);
+    }
+  }
+  return { board: newBoard, popped };
+}
+
+/**
+ * Rescues ducks that reached the bottom row, lets the column settle and repeats
+ * (a rescued duck can let the next one drop down).
+ */
+export function collectDucks(board: Cell[][]): { board: Cell[][]; collected: number } {
+  let b = board;
+  let collected = 0;
+  for (let guard = 0; guard < 50; guard++) {
+    const last = b.length - 1;
+    const hit = b[last].map((cell, c) => (cell.type === 'duck' ? c : -1)).filter(c => c >= 0);
+    if (!hit.length) break;
+    collected += hit.length;
+    b = b.map((row, r) => row.map((cell, c) =>
+      r === last && hit.includes(c) ? { ...cell, type: 'empty' as CellType, color: null } : cell));
+    b = applyGravity(b);
+  }
+  return { board: b, collected };
+}
+
+export interface BlastHits { crate: number; ice: number; balloon: number; duck: number; stone: number }
+
+/**
+ * One move's worth of board resolution, shared by the game and the balancing
+ * bot: remove the blasted cells, damage crates/ice/balloons around them, let
+ * the board fall and rescue ducks. `exploding` is the board to animate,
+ * `final` the settled one.
+ */
+export function resolveBlast(clean: Cell[][], positions: [number, number][]): {
+  exploding: Cell[][]; final: Cell[][]; hits: BlastHits;
+} {
+  const direct = {
+    crate: countTypeHit(clean, positions, 'crate'),
+    ice: countTypeHit(clean, positions, 'ice'),
+    balloon: countTypeHit(clean, positions, 'balloon'),
+    stone: countStonesHit(clean, positions),
+  };
+  let b = removeCells(clean, positions);
+  const dc = damageCrates(b, positions); b = dc.board;
+  const di = damageIce(b, positions); b = di.board;
+  const db = damageBalloons(b, positions); b = db.board;
+  const settled = collectDucks(applyGravity(b));
+  return {
+    exploding: b,
+    final: settled.board,
+    hits: {
+      crate: direct.crate + dc.destroyed.length,
+      ice: direct.ice + di.broken.length,
+      balloon: direct.balloon + db.popped.length,
+      duck: settled.collected,
+      stone: direct.stone,
+    },
+  };
+}
+
+/** Counts this move's hits off the remaining obstacle goals. */
+export function applyObjectives(objectives: Objectives, hits: BlastHits): Objectives {
+  const out: Objectives = { ...objectives };
+  (Object.keys(out) as ObjectiveKind[]).forEach(k => { out[k] = Math.max(0, (out[k] ?? 0) - hits[k]); });
+  return out;
+}
+
+/** Won when every color goal and every obstacle goal is done. */
+export function goalsMet(targets: Partial<Record<CellColor, number>>, objectives: Objectives): boolean {
+  return checkWin(targets) && Object.values(objectives).every(v => (v ?? 0) <= 0);
 }
