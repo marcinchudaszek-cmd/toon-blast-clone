@@ -29,6 +29,10 @@ export interface GameProgress {
   achievements: string[]; // unlocked achievement ids
   dailyReward: DailyRewardState;
   tutorialSeen: boolean; // first-run coach marks have been shown
+  startBoosters: { rocket: number; bomb: number; disco: number }; // pre-level power-ups
+  winStreak: number;   // levels won in a row (gift power-ups on the next level)
+  starChest: number;   // stars collected towards the next star chest
+  chestsOpened: number;
 }
 
 const DEFAULT_STATS: PlayerStats = {
@@ -56,6 +60,10 @@ const DEFAULT: GameProgress = {
   achievements: [],
   dailyReward: { ...DEFAULT_DAILY_REWARD },
   tutorialSeen: false,
+  startBoosters: { rocket: 2, bomb: 2, disco: 1 },
+  winStreak: 0,
+  starChest: 0,
+  chestsOpened: 0,
 };
 
 export function loadProgress(): GameProgress {
@@ -89,6 +97,14 @@ export function loadProgress(): GameProgress {
       },
       // Existing players have already learned the game — don't coach them again.
       tutorialSeen: typeof p.tutorialSeen === 'boolean' ? p.tutorialSeen : true,
+      startBoosters: {
+        rocket: typeof p.startBoosters?.rocket === 'number' ? p.startBoosters.rocket : DEFAULT.startBoosters.rocket,
+        bomb:   typeof p.startBoosters?.bomb   === 'number' ? p.startBoosters.bomb   : DEFAULT.startBoosters.bomb,
+        disco:  typeof p.startBoosters?.disco  === 'number' ? p.startBoosters.disco  : DEFAULT.startBoosters.disco,
+      },
+      winStreak: typeof p.winStreak === 'number' ? p.winStreak : 0,
+      starChest: typeof p.starChest === 'number' ? p.starChest : 0,
+      chestsOpened: typeof p.chestsOpened === 'number' ? p.chestsOpened : 0,
     };
   } catch {
     return structuredCloneProgress(DEFAULT);
@@ -120,6 +136,7 @@ function structuredCloneProgress(p: GameProgress): GameProgress {
     stats: { ...p.stats },
     achievements: [...p.achievements],
     dailyReward: { ...p.dailyReward },
+    startBoosters: { ...p.startBoosters },
   };
 }
 

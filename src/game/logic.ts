@@ -537,3 +537,51 @@ export function createPowerUpCell(row: number, col: number, color: CellColor, ty
     new: true,
   };
 }
+
+// ─── Hint, start power-ups ──────────────────────────────────────────────────
+
+/**
+ * What to suggest after the player has been idle: the largest tappable group
+ * (it also builds the biggest power-up), or, when no group exists, a power-up
+ * cell. Returns the cells to highlight, or an empty list.
+ */
+export function findHintGroup(board: Cell[][]): [number, number][] {
+  const seen = new Set<string>();
+  let best: [number, number][] = [];
+  for (let r = 0; r < board.length; r++) {
+    for (let c = 0; c < board[r].length; c++) {
+      if (seen.has(`${r},${c}`)) continue;
+      const group = findGroup(board, r, c);
+      group.forEach(([gr, gc]) => seen.add(`${gr},${gc}`));
+      if (group.length >= 2 && group.length > best.length) best = group;
+    }
+  }
+  if (best.length) return best;
+  for (let r = 0; r < board.length; r++)
+    for (let c = 0; c < board[r].length; c++)
+      if (['rocket', 'bomb', 'disco'].includes(board[r][c].type)) return [[r, c]];
+  return [];
+}
+
+/**
+ * Turns random plain cells into the given power-ups (pre-level boosters and the
+ * win-streak gift). Prefers the lower half, where a blast clears the most.
+ * Returns a new board; skips power-ups that find no free cell.
+ */
+export function placeStartPowerUps(board: Cell[][], types: CellType[]): Cell[][] {
+  const out = board.map(row => row.map(c => ({ ...c })));
+  const half = Math.floor(out.length / 2);
+  const cells: [number, number][] = [];
+  out.forEach((row, r) => row.forEach((cell, c) => {
+    if (cell.type === 'normal' && cell.color) cells.push([r, c]);
+  }));
+  const lower = cells.filter(([r]) => r >= half);
+  const pool = (lower.length >= types.length ? lower : cells).sort(() => Math.random() - 0.5);
+  types.forEach((type, i) => {
+    const pos = pool[i];
+    if (!pos) return;
+    const [r, c] = pos;
+    out[r][c] = createPowerUpCell(r, c, out[r][c].color as CellColor, type);
+  });
+  return out;
+}

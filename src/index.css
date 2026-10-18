@@ -255,3 +255,12 @@ button:active {
   background: rgba(255, 255, 255, 0.3);
   border-radius: 2px;
 }
+
+/* Podpowiedź po bezczynności: grupa delikatnie pulsuje i świeci */
+@keyframes hint-pulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.1); filter: brightness(1.35) drop-shadow(0 0 6px rgba(255,255,255,0.8)); }
+}
+.animate-hint {
+  animation: hint-pulse 0.9s ease-in-out infinite;
+}

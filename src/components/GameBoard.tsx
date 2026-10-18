@@ -7,6 +7,8 @@ interface GameBoardProps {
   board: Cell[][];
   onCellClick: (row: number, col: number) => void;
   animating?: boolean;
+  /** Cells to pulse as a hint after the player has been idle ("r,c" keys). */
+  hintCells?: Set<string>;
 }
 
 const GAP = 4;
@@ -28,7 +30,7 @@ function calcCellSize(rows: number, cols: number): number {
   return Math.max(CELL_MIN, Math.min(CELL_MAX, byWidth, byHeight));
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ board, onCellClick, animating = false }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ board, onCellClick, animating = false, hintCells }) => {
   const [hoveredGroup, setHoveredGroup] = useState<Set<string>>(new Set());
 
   const rows = board.length;
@@ -96,7 +98,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ board, onCellClick, animat
               <div
                 key={cell.id}
                 data-cell={key}
-                className={`transition-all duration-100 ${isInGroup ? 'brightness-125 scale-105' : ''}`}
+                className={`transition-all duration-100 ${isInGroup ? 'brightness-125 scale-105' : ''} ${hintCells?.has(key) ? 'animate-hint' : ''}`}
                 onMouseEnter={() => handleMouseEnter(r, c)}
                 onMouseLeave={handleMouseLeave}
               >

@@ -3,6 +3,7 @@ import { AchievementDef } from '../game/achievements';
 import { DailyRewardOffer } from '../game/dailyReward';
 import { PlayerStats } from '../game/storage';
 import { LevelMap } from './LevelMap';
+import { ChestReward } from '../game/rewards';
 
 interface StartScreenProps {
   onStart: () => void;
@@ -20,6 +21,10 @@ interface StartScreenProps {
   dailyStreak: number;
   onClaimDaily: () => void;
   onOpenSettings: () => void;
+  starChest: number;
+  starChestGoal: number;
+  onOpenStarChest: () => ChestReward | null;
+  winStreak: number;
 }
 
 const TIERS = [
@@ -78,10 +83,16 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   dailyStreak,
   onClaimDaily,
   onOpenSettings,
+  starChest,
+  starChestGoal,
+  onOpenStarChest,
+  winStreak,
 }) => {
   const [showLevels, setShowLevels] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showDaily, setShowDaily] = useState(false);
+  const [chestReward, setChestReward] = useState<ChestReward | null>(null);
+  const chestReady = starChest >= starChestGoal;
 
   const clampedUnlocked = Math.min(unlockedLevel, totalLevels);
   const unlockedSet = new Set(unlockedAchievements);
@@ -190,6 +201,33 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             )}
           </button>
         </div>
+        <button
+          onClick={() => { const r = onOpenStarChest(); if (r) setChestReward(r); }}
+          disabled={!chestReady}
+          className={`w-full relative rounded-xl border px-4 py-2.5 text-left transition-all ${
+            chestReady
+              ? 'bg-gradient-to-b from-yellow-300 to-amber-500 border-amber-700 animate-glow active:scale-95'
+              : 'bg-white/15 border-white/30 backdrop-blur-sm'}`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{chestReady ? '🎁' : '⭐'}</span>
+            <div className="flex-1 min-w-0">
+              <p className={`font-bold text-xs ${chestReady ? 'text-amber-950' : 'text-white'}`}>
+                {chestReady ? 'Skrzynia gwiazd gotowa — otwórz!' : 'Skrzynia gwiazd'}
+              </p>
+              <div className="mt-1 h-1.5 rounded-full bg-black/20 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-yellow-200 to-yellow-400 rounded-full"
+                  style={{ width: `${Math.min(100, (starChest / starChestGoal) * 100)}%` }} />
+              </div>
+            </div>
+            <span className={`text-xs font-black ${chestReady ? 'text-amber-950' : 'text-white/70'}`}>
+              {Math.min(starChest, starChestGoal)}/{starChestGoal}
+            </span>
+          </div>
+        </button>
+        {winStreak > 0 && (
+          <p className="text-orange-100 text-xs font-semibold">🔥 Seria zwycięstw: {winStreak}</p>
+        )}
       </div>
 
       {/* Power-ups strip */}
@@ -313,6 +351,41 @@ export const StartScreen: React.FC<StartScreenProps> = ({
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Star Chest Reward ===== */}
+      {chestReward && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setChestReward(null)}
+        >
+          <div
+            className="bg-gradient-to-b from-amber-400 to-orange-600 rounded-3xl p-6 mx-4 max-w-sm w-full shadow-2xl text-center border border-white/20 animate-bounce-in"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-6xl mb-2 animate-bounce">🎁</div>
+            <h2 className="text-2xl font-black text-white mb-1" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.35)' }}>Skrzynia gwiazd!</h2>
+            <p className="text-white/85 text-xs mb-4">Za {starChestGoal} zdobytych gwiazdek dostajesz:</p>
+            <div className="bg-white/15 rounded-2xl p-4 mb-4 flex justify-center gap-3 flex-wrap">
+              {[
+                { icon: '🔨', n: chestReward.hammer }, { icon: '⌛', n: chestReward.extraMoves },
+                { icon: '💥', n: chestReward.colorBomb }, { icon: '🚀', n: chestReward.rocket },
+                { icon: '💣', n: chestReward.bomb }, { icon: '🪩', n: chestReward.disco },
+              ].filter(r => r.n > 0).map(r => (
+                <div key={r.icon} className="flex flex-col items-center w-12">
+                  <span className="text-3xl">{r.icon}</span>
+                  <span className="text-white font-black text-lg">+{r.n}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setChestReward(null)}
+              className="w-full bg-gradient-to-b from-white to-yellow-100 text-orange-700 font-black text-lg py-3 rounded-2xl shadow-lg active:scale-95 transition-all border-b-4 border-yellow-300"
+            >
+              Super!
+            </button>
           </div>
         </div>
       )}

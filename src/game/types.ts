@@ -49,7 +49,8 @@ export interface PendingState {
   score: number;
   moves: number;
   targets: Partial<Record<CellColor, number>>;
-  gameStatus: 'playing' | 'won' | 'lost' | 'idle';
+  // 'finale': level already won, leftover moves are being fired as rockets
+  gameStatus: 'playing' | 'finale' | 'won' | 'lost' | 'idle';
   combo: number;
 }
 
@@ -59,7 +60,8 @@ export interface GameState {
   moves: number;
   level: number;
   targets: Partial<Record<CellColor, number>>;
-  gameStatus: 'playing' | 'won' | 'lost' | 'idle';
+  // 'finale': level already won, leftover moves are being fired as rockets
+  gameStatus: 'playing' | 'finale' | 'won' | 'lost' | 'idle';
   combo: number;
   animating: boolean;
   pending: PendingState | null;
@@ -67,4 +69,6 @@ export interface GameState {
   statsDelta: StatsDelta | null; // most recent stats event for the lifetime-stats accumulator
   shuffleSeq: number; // bumped whenever a dead board is reshuffled, so the UI can announce it
   continuesUsed: number; // "+5 moves" second chances spent on the current attempt
+  preLevel: boolean; // board dealt, pre-level booster screen still open
+  winMoves: number | null; // moves left at the moment of winning (stars), before the finale spends them
 }

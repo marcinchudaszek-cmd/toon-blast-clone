@@ -19,6 +19,7 @@ import {
   hasValidMoves,
   shuffleBoard,
   countStonesHit,
+  placeStartPowerUps,
 } from './logic';
 import { LEVELS } from './levels';
 import { GameProgress, loadProgress, saveProgress, clearProgress, todayKey } from './storage';
@@ -26,6 +27,7 @@ import { playPop, playPowerUpCreated, playPowerUpActivate, playCombo, playWin, p
 import { hapticBlast, hapticCombo, hapticLose, hapticPowerUp, hapticWin } from './haptics';
 import { ACHIEVEMENTS, AchievementDef, findNewlyUnlocked } from './achievements';
 import { getDailyOffer, isClaimAvailable } from './dailyReward';
+import { StartBooster, START_BOOSTERS, streakGift, STAR_CHEST_GOAL, chestReward, ChestReward } from './rewards';
 
 // Booster milestone refill — every Nth completed level rewards the player with
 // extra boosters of every type, so they don't run dry on later, harder boards.
@@ -42,7 +44,9 @@ type Action =
   | { type: 'GOTO_LEVEL'; level: number }
   | { type: 'ACTIVATE_BOOSTER'; booster: BoosterType; extraMovesCount?: number }
   | { type: 'CANCEL_BOOSTER' }
-  | { type: 'SECOND_CHANCE' };
+  | { type: 'SECOND_CHANCE' }
+  | { type: 'BEGIN_LEVEL'; powerUps: CellType[] }
+  | { type: 'FINALE_STEP' };
 
 function initLevel(levelIdx: number, prevScore = 0): GameState {
   const config = LEVELS[levelIdx];
@@ -67,8 +71,24 @@ function initLevel(levelIdx: number, prevScore = 0): GameState {
     statsDelta: null,
     shuffleSeq: 0,
     continuesUsed: 0,
+    preLevel: true,
+    winMoves: null,
   };
 }
+
+/**
+ * Status after a move. A win with moves to spare goes to the 'finale' first:
+ * the leftover moves are fired as rockets (and scored) before the win screen,
+ * as in Toon Blast. `winMoves` keeps the count for the star rating.
+ */
+function endOfMove(won: boolean, finalMoves: number): { gameStatus: GameState['gameStatus']; winMoves: number | null } {
+  if (won) return { gameStatus: finalMoves > 0 ? 'finale' : 'won', winMoves: finalMoves };
+  return { gameStatus: finalMoves <= 0 ? 'lost' : 'playing', winMoves: null };
+}
+
+/** Points per leftover move, and how many are shown as rockets before the rest are cashed in at once. */
+export const FINALE_POINTS_PER_MOVE = 100;
+const FINALE_MAX_ROCKETS = 10;
 
 /** Moves granted by a "+5 moves" second chance after running dry. */
 export const SECOND_CHANCE_MOVES = 5;
@@ -140,7 +160,7 @@ function gameReducer(state: GameState, action: Action): GameState {
     }
 
     case 'ACTIVATE_BOOSTER': {
-      if (state.gameStatus !== 'playing' || state.animating) return state;
+      if (state.gameStatus !== 'playing' || state.animating || state.preLevel) return state;
       // extraMoves booster applies immediately (no cell tap needed)
       if (action.booster === 'extraMoves') {
         return { ...state, moves: state.moves + (action.extraMovesCount ?? 3), activeBooster: null };
@@ -171,16 +191,15 @@ function gameReducer(state: GameState, action: Action): GameState {
 
         const scoreGain = positions.length * 80 + destroyed.length * 100 + iceBroken.length * 50;
         const finalMoves = state.moves - 1;
-        const won = checkWin(finalTargets);
-        const lost = !won && finalMoves <= 0;
-        const bonusPoints = won ? finalMoves * 100 : 0;
+        const end = endOfMove(checkWin(finalTargets), finalMoves);
+        const bonusPoints = 0;
 
         const pending: PendingState = {
           board: finalBoard,
-          score: state.score + scoreGain + bonusPoints,
+          score: state.score + scoreGain,
           moves: finalMoves,
           targets: finalTargets,
-          gameStatus: won ? 'won' : lost ? 'lost' : 'playing',
+          gameStatus: end.gameStatus,
           combo: 0,
         };
         const statsDelta = nextStatsDelta({
@@ -192,7 +211,7 @@ function gameReducer(state: GameState, action: Action): GameState {
           comboReached: 0,
           scoreGained: scoreGain + bonusPoints,
         });
-        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta };
+        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
       }
       // hammer: arm it, wait for TAP_CELL
       return { ...state, activeBooster: action.booster };
@@ -202,7 +221,15 @@ function gameReducer(state: GameState, action: Action): GameState {
       return { ...state, activeBooster: null };
 
     case 'TAP_CELL': {
-      if (state.gameStatus !== 'playing' || state.animating) return state;
+      // A tap during the finale skips the rocket show: cash in the rest at once.
+      if (state.gameStatus === 'finale') {
+        if (state.pending) {
+          const p = state.pending;
+          return { ...state, pending: { ...p, score: p.score + p.moves * FINALE_POINTS_PER_MOVE, moves: 0, gameStatus: 'won' } };
+        }
+        return { ...state, score: state.score + state.moves * FINALE_POINTS_PER_MOVE, moves: 0, gameStatus: 'won' };
+      }
+      if (state.gameStatus !== 'playing' || state.animating || state.preLevel) return state;
 
       const { row, col } = action;
       const cell = state.board[row]?.[col];
@@ -231,14 +258,14 @@ function gameReducer(state: GameState, action: Action): GameState {
         });
 
         const scoreGain = 50 + destroyed.length * 100 + iceBroken.length * 50;
-        const won = checkWin(finalTargets);
+        const end = endOfMove(checkWin(finalTargets), state.moves);
         // hammer doesn't consume a move
         const pending: PendingState = {
           board: finalBoard,
           score: state.score + scoreGain,
           moves: state.moves,
           targets: finalTargets,
-          gameStatus: won ? 'won' : 'playing',
+          gameStatus: end.gameStatus === 'lost' ? 'playing' : end.gameStatus,
           combo: 0,
         };
         const statsDelta = nextStatsDelta({
@@ -250,7 +277,7 @@ function gameReducer(state: GameState, action: Action): GameState {
           comboReached: 0,
           scoreGained: scoreGain,
         });
-        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta };
+        return { ...state, board: explodingBoard, animating: true, pending, activeBooster: null, statsDelta, winMoves: end.winMoves };
       }
 
       // ── Normal tap ──
@@ -362,17 +389,14 @@ function gameReducer(state: GameState, action: Action): GameState {
       });
 
       const finalMoves = state.moves - 1;
-      const won = checkWin(finalTargets);
-      const lost = !won && finalMoves <= 0;
-      const bonusPoints = won ? finalMoves * 100 : 0;
-      scoreGain += bonusPoints;
+      const end = endOfMove(checkWin(finalTargets), finalMoves);
 
       const pending: PendingState = {
         board: finalBoard,
         score: state.score + scoreGain,
         moves: finalMoves,
         targets: finalTargets,
-        gameStatus: won ? 'won' : lost ? 'lost' : 'playing',
+        gameStatus: end.gameStatus,
         combo,
       };
 
@@ -386,7 +410,50 @@ function gameReducer(state: GameState, action: Action): GameState {
         scoreGained: scoreGain,
       });
 
-      return { ...state, board: explodingBoard, animating: true, pending, statsDelta };
+      return { ...state, board: explodingBoard, animating: true, pending, statsDelta, winMoves: end.winMoves };
+    }
+
+    case 'BEGIN_LEVEL': {
+      if (!state.preLevel) return state;
+      const board = action.powerUps.length ? placeStartPowerUps(state.board, action.powerUps) : state.board;
+      return { ...state, board, preLevel: false };
+    }
+
+    case 'FINALE_STEP': {
+      if (state.gameStatus !== 'finale' || state.animating) return state;
+      let moves = state.moves;
+      let score = state.score;
+      // Long tails are cashed in at once so the show never drags on.
+      if (moves > FINALE_MAX_ROCKETS) {
+        score += (moves - FINALE_MAX_ROCKETS) * FINALE_POINTS_PER_MOVE;
+        moves = FINALE_MAX_ROCKETS;
+      }
+      const cleanBoard = state.board.map(r =>
+        r.map(c => ({ ...c, exploding: false, new: false, fallDistance: undefined }))
+      );
+      const candidates: [number, number][] = [];
+      cleanBoard.forEach((row, r) => row.forEach((cell, c) => {
+        if (cell.type === 'normal' && cell.color) candidates.push([r, c]);
+      }));
+      if (moves <= 0 || candidates.length === 0) {
+        return { ...state, board: cleanBoard, score: score + moves * FINALE_POINTS_PER_MOVE, moves: 0, gameStatus: 'won' };
+      }
+      const [row, col] = candidates[Math.floor(Math.random() * candidates.length)];
+      const positions = applyRocket(cleanBoard, row, col);
+      let explodingBoard = removeCells(cleanBoard, positions);
+      explodingBoard = damageCrates(explodingBoard, positions).board;
+      explodingBoard = damageIce(explodingBoard, positions).board;
+      const gain = FINALE_POINTS_PER_MOVE + positions.length * 10;
+      playPowerUpActivate('rocket');
+      const pending: PendingState = {
+        board: applyGravity(explodingBoard),
+        score: score + gain,
+        moves: moves - 1,
+        targets: state.targets,
+        gameStatus: moves - 1 > 0 ? 'finale' : 'won',
+        combo: 0,
+      };
+      return { ...state, score, moves, board: explodingBoard, animating: true, pending };
     }
 
     default:
@@ -408,6 +475,8 @@ const initialState: GameState = {
   statsDelta: null,
   shuffleSeq: 0,
   continuesUsed: 0,
+  preLevel: false,
+  winMoves: null,
 };
 
 export function useGame() {
@@ -433,7 +502,7 @@ export function useGame() {
   useEffect(() => {
     if (state.gameStatus !== 'won' || state.level > LEVELS.length) return;
     const config = LEVELS[state.level - 1];
-    const stars = calculateStars(state.moves, config.moves);
+    const stars = calculateStars(state.winMoves ?? state.moves, config.moves);
     // Every MILESTONE_INTERVAL completed levels, refill all booster types —
     // keeps players from running dry on bigger/harder boards later in the game.
     const isMilestone = state.level % MILESTONE_INTERVAL === 0;
@@ -464,11 +533,20 @@ export function useGame() {
           ...prev.stats,
           levelsCompleted: prev.stats.levelsCompleted + 1,
         },
+        winStreak: prev.winStreak + 1,
+        starChest: prev.starChest + stars,
       };
       saveProgress(next);
       return next;
     });
-  }, [state.gameStatus, state.level, state.score, state.moves]);
+  }, [state.gameStatus, state.level, state.score, state.moves, state.winMoves]);
+
+  // Finale: fire one leftover move as a rocket every ~0.35 s
+  useEffect(() => {
+    if (state.gameStatus !== 'finale' || state.animating) return;
+    const t = setTimeout(() => dispatch({ type: 'FINALE_STEP' }), 350);
+    return () => clearTimeout(t);
+  }, [state.gameStatus, state.animating, state.moves]);
 
   // Fold each move's stats event (cells cleared, power-ups fired, combos, etc.)
   // into the lifetime stats used by the achievements system. `seq` guards against
@@ -549,21 +627,88 @@ export function useGame() {
     dispatch({ type: 'TAP_CELL', row, col });
   }, []);
 
+  /**
+   * Leaving a level that was lost, or abandoning one after the first move,
+   * ends the win streak (otherwise quitting a bad board would keep it alive).
+   */
+  const breakStreakIfAbandoned = () => {
+    const config = LEVELS[state.level - 1];
+    const started = !state.preLevel && !!config && (state.moves < config.moves || state.score > 0 || state.continuesUsed > 0);
+    const abandoned = state.gameStatus === 'lost' || (state.gameStatus === 'playing' && started);
+    if (!abandoned) return;
+    setProgress(prev => {
+      if (prev.winStreak === 0) return prev;
+      const next = { ...prev, winStreak: 0 };
+      saveProgress(next);
+      return next;
+    });
+  };
+
   const nextLevel = useCallback(() => {
     dispatch({ type: 'NEXT_LEVEL' });
   }, []);
 
-  const restartLevel = useCallback(() => {
+  const restartLevel = () => {
+    breakStreakIfAbandoned();
     dispatch({ type: 'RESTART_LEVEL' });
-  }, []);
+  };
+
+  /** Free power-ups the next level starts with, from the current win streak. */
+  const streakPowerUps = streakGift(progress.winStreak);
+
+  /**
+   * Closes the pre-level screen: places the streak gift plus the boosters the
+   * player picked (each one taken from the inventory).
+   */
+  const beginLevel = (picked: StartBooster[]) => {
+    const usable = picked.filter(b => progress.startBoosters[b] > 0);
+    if (usable.length) {
+      setProgress(prev => {
+        const sb = { ...prev.startBoosters };
+        usable.forEach(b => { sb[b] = Math.max(0, sb[b] - 1); });
+        const next = { ...prev, startBoosters: sb };
+        saveProgress(next);
+        return next;
+      });
+    }
+    dispatch({ type: 'BEGIN_LEVEL', powerUps: [...streakPowerUps, ...usable] });
+  };
+
+  /** Opens one star chest if enough stars are collected; returns what it gave. */
+  const openStarChest = (): ChestReward | null => {
+    if (progress.starChest < STAR_CHEST_GOAL) return null;
+    const reward = chestReward(progress.chestsOpened + 1);
+    setProgress(prev => {
+      if (prev.starChest < STAR_CHEST_GOAL) return prev;
+      const next: GameProgress = {
+        ...prev,
+        starChest: prev.starChest - STAR_CHEST_GOAL,
+        chestsOpened: prev.chestsOpened + 1,
+        boosters: {
+          hammer: prev.boosters.hammer + reward.hammer,
+          extraMoves: prev.boosters.extraMoves + reward.extraMoves,
+          colorBomb: prev.boosters.colorBomb + reward.colorBomb,
+        },
+        startBoosters: {
+          rocket: prev.startBoosters.rocket + reward.rocket,
+          bomb: prev.startBoosters.bomb + reward.bomb,
+          disco: prev.startBoosters.disco + reward.disco,
+        },
+      };
+      saveProgress(next);
+      return next;
+    });
+    return reward;
+  };
 
   const startGame = useCallback(() => {
     dispatch({ type: 'START_GAME' });
   }, []);
 
-  const gotoLevel = useCallback((level: number) => {
+  const gotoLevel = (level: number) => {
+    if (state.gameStatus !== 'idle') breakStreakIfAbandoned();
     dispatch({ type: 'GOTO_LEVEL', level });
-  }, []);
+  };
 
   const resetProgress = useCallback(() => {
     clearProgress();
@@ -618,9 +763,12 @@ export function useGame() {
     });
   }, []);
 
-  const gotoMenu = useCallback(() => {
+  const gotoMenu = () => {
+    // Leaving during the finale would lose the win: finish it instead.
+    if (state.gameStatus === 'finale') { dispatch({ type: 'TAP_CELL', row: 0, col: 0 }); return; }
+    breakStreakIfAbandoned();
     dispatch({ type: 'GOTO_MENU' });
-  }, []);
+  };
 
   const cancelBooster = useCallback(() => {
     dispatch({ type: 'CANCEL_BOOSTER' });
@@ -650,5 +798,10 @@ export function useGame() {
     canClaimDaily,
     dailyOffer,
     claimDailyReward,
+    beginLevel,
+    streakPowerUps,
+    startBoosterTypes: START_BOOSTERS,
+    openStarChest,
+    starChestGoal: STAR_CHEST_GOAL,
   };
 }

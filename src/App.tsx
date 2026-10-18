@@ -4,7 +4,9 @@ import { useBackButton } from './game/useBackButton';
 import { useSettings } from './game/useSettings';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Tutorial, TutorialStep } from './components/Tutorial';
-import { findGroup } from './game/logic';
+import { findGroup, findHintGroup } from './game/logic';
+import { PreLevelModal } from './components/PreLevelModal';
+import { START_BOOSTER_INFO } from './game/rewards';
 import { Cell } from './game/types';
 
 interface Spotlight { top: number; left: number; width: number; height: number }
@@ -38,6 +40,7 @@ export default function App() {
     achievements, achievementToast, dismissAchievementToast,
     canClaimDaily, dailyOffer, claimDailyReward,
     canUseSecondChance, useSecondChance, secondChanceMoves, markTutorialSeen,
+    beginLevel, streakPowerUps, startBoosterTypes, openStarChest, starChestGoal,
   } = useGame();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showShuffle, setShowShuffle] = useState(false);
@@ -50,7 +53,7 @@ export default function App() {
   const levelConfig = LEVELS[Math.min(state.level - 1, LEVELS.length - 1)];
   const levelName = levelConfig?.name ?? 'Nieznany';
   const starsEarned = state.gameStatus === 'won' && state.level <= totalLevels
-    ? calculateStars(state.moves, levelConfig?.moves ?? 1)
+    ? calculateStars(state.winMoves ?? state.moves, levelConfig?.moves ?? 1)
     : 0;
   const isMilestoneWin = state.gameStatus === 'won' && state.level <= totalLevels
     && state.level % MILESTONE_INTERVAL === 0;
@@ -87,7 +90,7 @@ export default function App() {
 
   // ── First-run tutorial ──
   const tutorialActive =
-    !progress.tutorialSeen && state.level === 1 && state.gameStatus === 'playing';
+    !progress.tutorialSeen && state.level === 1 && state.gameStatus === 'playing' && !state.preLevel;
 
   const tutorialSteps: TutorialStep[] = useMemo(() => {
     const target = tutorialActive ? firstMatchableCell(state.board) : null;
@@ -136,6 +139,21 @@ export default function App() {
     setTutorialStep(s => (tutorialSteps[s]?.highlight ? s + 1 : s));
   }, [state.statsDelta, tutorialActive, tutorialSteps]);
 
+  // ── Idle hint: after HINT_DELAY_MS without a move, pulse the best group ──
+  const HINT_DELAY_MS = 5000;
+  const [hintCells, setHintCells] = useState<Set<string> | undefined>(undefined);
+  const hintAllowed = state.gameStatus === 'playing' && !state.animating && !state.preLevel
+    && !state.activeBooster && !tutorialActive;
+  useEffect(() => {
+    setHintCells(undefined);
+    if (!hintAllowed) return;
+    const t = setTimeout(() => {
+      const group = findHintGroup(state.board);
+      if (group.length) setHintCells(new Set(group.map(([r, c]) => `${r},${c}`)));
+    }, HINT_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [state.board, hintAllowed]);
+
   const finishTutorial = () => {
     setTutorialStep(0);
     markTutorialSeen();
@@ -160,6 +178,10 @@ export default function App() {
           dailyStreak={progress.dailyReward.streak}
           onClaimDaily={claimDailyReward}
           onOpenSettings={() => setShowSettings(true)}
+          starChest={progress.starChest}
+          starChestGoal={starChestGoal}
+          onOpenStarChest={openStarChest}
+          winStreak={progress.winStreak}
         />
         {achievementToast && (
           <AchievementToast achievement={achievementToast} onDismiss={dismissAchievementToast} />
@@ -230,7 +252,7 @@ export default function App() {
               key={b.key}
               onClick={() => {
                 if (isActive) { cancelBooster(); return; }
-                if (isEmpty || state.gameStatus !== 'playing' || state.animating) return;
+                if (isEmpty || state.gameStatus !== 'playing' || state.animating || state.preLevel) return;
                 useBooster(b.key);
               }}
               title={b.hint}
@@ -271,7 +293,15 @@ export default function App() {
 
       {/* Game Board */}
       <div className="relative z-10">
-        <GameBoard board={state.board} onCellClick={tapCell} animating={state.animating} />
+        <GameBoard board={state.board} onCellClick={tapCell} animating={state.animating} hintCells={hintCells} />
+        {state.gameStatus === 'finale' && (
+          <button
+            onClick={() => tapCell(0, 0)}
+            className="absolute inset-x-0 -top-3 mx-auto w-fit z-20 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-black text-sm px-4 py-2 rounded-full shadow-xl border-b-2 border-orange-700 animate-bounce-in"
+          >
+            🚀 Bonus za ruchy: {state.moves} · dotknij, żeby pominąć
+          </button>
+        )}
         {showShuffle && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
             <div className="bg-indigo-900/85 border border-cyan-300/50 rounded-2xl px-5 py-3 flex items-center gap-2 animate-bounce-in shadow-2xl">
@@ -331,6 +361,14 @@ export default function App() {
             {starsEarned === 3 && (
               <p className="text-yellow-200 text-xs mt-1">🔨 +1 młotek w nagrodę!</p>
             )}
+            <p className="text-orange-100 text-xs mt-2 font-semibold">
+              🔥 Seria zwycięstw: {progress.winStreak}
+              {streakPowerUps.length > 0 && <> · następny poziom: {streakPowerUps.map(b => START_BOOSTER_INFO[b].icon).join(' ')}</>}
+            </p>
+            <p className="text-yellow-100 text-xs mt-1">
+              🎁 Skrzynia gwiazd: {Math.min(progress.starChest, starChestGoal)}/{starChestGoal}
+              {progress.starChest >= starChestGoal && ' — do otwarcia w menu!'}
+            </p>
             {isMilestoneWin && (
               <p className="text-cyan-200 text-xs mt-1 font-semibold">
                 🎁 Bonus za etap! +{MILESTONE_BOOSTER_AMOUNT} każdego boostera (🔨 ⏱️ 🌈)
@@ -385,6 +423,21 @@ export default function App() {
           )}
           <ModalButton onClick={gotoMenu} variant="secondary">☰ Menu</ModalButton>
         </Modal>
+      )}
+
+      {state.preLevel && state.gameStatus === 'playing' && (
+        <PreLevelModal
+          level={state.level}
+          levelName={levelName}
+          moves={state.moves}
+          targets={state.targets}
+          winStreak={progress.winStreak}
+          streakGift={streakPowerUps}
+          boosterTypes={startBoosterTypes}
+          inventory={progress.startBoosters}
+          onStart={beginLevel}
+          onMenu={gotoMenu}
+        />
       )}
 
       {achievementToast && (
