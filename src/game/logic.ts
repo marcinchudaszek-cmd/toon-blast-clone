@@ -141,13 +141,15 @@ export function createBoard(
   }
 
   if (duckCount > 0) {
-    // Ducks start on the top row, each in its own column
+    // Ducks start a third of the way down, each in its own column (from the very
+    // top the trip to the bottom row took most of the move budget)
     const order = Array.from({ length: cols }, (_, c) => c);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
     }
-    order.slice(0, Math.min(duckCount, cols)).forEach(c => { board[0][c] = createDuck(0, c); });
+    const startRow = Math.floor(rows / 3);
+    order.slice(0, Math.min(duckCount, cols)).forEach(c => { board[startRow][c] = createDuck(startRow, c); });
   }
 
   return board;
@@ -658,20 +660,27 @@ export function damageBalloons(
   return { board: newBoard, popped };
 }
 
+/** Ducks are rescued once they float into the bottom DUCK_WATER_ROWS rows. */
+export const DUCK_WATER_ROWS = 2;
+
 /**
- * Rescues ducks that reached the bottom row, lets the column settle and repeats
- * (a rescued duck can let the next one drop down).
+ * Rescues ducks that reached the water, lets the column settle and repeats (a
+ * rescued duck can let the next one drop down). Only the very bottom row used to
+ * count, and ducks stalled one row short above a lone block nothing could match.
  */
 export function collectDucks(board: Cell[][]): { board: Cell[][]; collected: number } {
   let b = board;
   let collected = 0;
   for (let guard = 0; guard < 50; guard++) {
-    const last = b.length - 1;
-    const hit = b[last].map((cell, c) => (cell.type === 'duck' ? c : -1)).filter(c => c >= 0);
-    if (!hit.length) break;
-    collected += hit.length;
+    const water = b.length - DUCK_WATER_ROWS;
+    const hit = new Set<string>();
+    b.forEach((row, r) => {
+      if (r >= water) row.forEach((cell, c) => { if (cell.type === 'duck') hit.add(`${r},${c}`); });
+    });
+    if (!hit.size) break;
+    collected += hit.size;
     b = b.map((row, r) => row.map((cell, c) =>
-      r === last && hit.includes(c) ? { ...cell, type: 'empty' as CellType, color: null } : cell));
+      hit.has(`${r},${c}`) ? { ...cell, type: 'empty' as CellType, color: null } : cell));
     b = applyGravity(b);
   }
   return { board: b, collected };

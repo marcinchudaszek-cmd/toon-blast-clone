@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Cell } from '../game/types';
 import { GameCell } from './GameCell';
-import { findGroup } from '../game/logic';
+import { findGroup, DUCK_WATER_ROWS } from '../game/logic';
 
 interface GameBoardProps {
   board: Cell[][];
@@ -71,6 +71,18 @@ export const GameBoard: React.FC<GameBoardProps> = ({ board, onCellClick, animat
         border: '1px solid rgba(255,255,255,0.1)',
       }}
     >
+      {/* Water where ducks get rescued — only on boards that have ducks */}
+      {board.some(row => row.some(c => c.type === 'duck')) && (
+        <div
+          className="absolute left-0 right-0 bottom-0 rounded-b-2xl pointer-events-none"
+          style={{
+            height: DUCK_WATER_ROWS * (CELL_SIZE + GAP) + 8,
+            background: 'linear-gradient(to bottom, rgba(56,189,248,0.15), rgba(14,165,233,0.45))',
+            borderTop: '2px dashed rgba(125,211,252,0.7)',
+          }}
+        />
+      )}
+
       {/* Background grid */}
       <div
         className="absolute inset-0 rounded-xl opacity-20"

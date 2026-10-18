@@ -14,19 +14,17 @@ import {
   createBoard,
   findGroup,
   getPowerUpForGroup,
-  applyGravity,
   applyRocket,
   applyBomb,
   applyDisco,
   applyCombo,
-  removeCells,
   countByColor,
-  damageCrates,
-  damageIce,
   createPowerUpCell,
   hasValidMoves,
+  resolveBlast,
+  applyObjectives,
 } from '../../src/game/logic';
-import type { Cell, CellColor, CellType, LevelConfig } from '../../src/game/types';
+import type { Cell, CellColor, CellType, LevelConfig, Objectives } from '../../src/game/types';
 
 export type Targets = Partial<Record<CellColor, number>>;
 export type ColorWeights = Partial<Record<CellColor, number>>;
@@ -76,7 +74,7 @@ function allGroups(board: Cell[][]): [number, number][][] {
  * Mirrors the adjacency rule in damageCrates/damageIce closely enough for
  * move scoring; the real functions still run for the move that gets played.
  */
-function countObstacleHits(board: Cell[][], positions: [number, number][]): { crates: number; ice: number } {
+function countObstacleHits(board: Cell[][], positions: [number, number][]): { crates: number; ice: number; balloons: number } {
   const rows = board.length;
   const cols = board[0].length;
   const cleared = new Set<number>();
@@ -84,6 +82,13 @@ function countObstacleHits(board: Cell[][], positions: [number, number][]): { cr
   const touched = new Set<number>();
   let crates = 0;
   let ice = 0;
+  let balloons = 0;
+  for (const key of cleared) {
+    const t = board[Math.floor(key / cols)][key % cols].type;
+    if (t === 'crate') crates++;
+    else if (t === 'ice') ice++;
+    else if (t === 'balloon') balloons++;
+  }
   for (const [r, c] of positions) {
     for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
       const nr = r + dr;
@@ -95,9 +100,29 @@ function countObstacleHits(board: Cell[][], positions: [number, number][]): { cr
       const t = board[nr][nc].type;
       if (t === 'crate') crates++;
       else if (t === 'ice') ice++;
+      else if (t === 'balloon') balloons++;
     }
   }
-  return { crates, ice };
+  return { crates, ice, balloons };
+}
+
+/**
+ * How much a move helps the ducks down: every cleared cell below a duck in its
+ * column lets it fall one row.
+ */
+function duckProgress(board: Cell[][], positions: [number, number][]): number {
+  const ducks: [number, number][] = [];
+  board.forEach((row, r) => row.forEach((cell, c) => { if (cell.type === 'duck') ducks.push([r, c]); }));
+  if (!ducks.length) return 0;
+  const seen = new Set<string>();
+  let n = 0;
+  for (const [r, c] of positions) {
+    const key = r + ',' + c;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const [dr, dc] of ducks) if (dc === c && r > dr) n++;
+  }
+  return n;
 }
 
 interface ScoreCtx {
@@ -109,6 +134,8 @@ interface ScoreCtx {
   remaining: Targets | null;
   /** Cells cleared per color so far, used by harvest mode. */
   cleared: Record<string, number>;
+  /** Remaining obstacle goals (crates, ice, balloons, ducks). */
+  objectives: Objectives;
 }
 
 /**
@@ -138,10 +165,14 @@ function moveValue(board: Cell[][], positions: [number, number][], ctx: ScoreCtx
     value += gain * (color === laggard ? 2 : 1);
   }
 
-  const { crates, ice } = countObstacleHits(board, positions);
-  // Obstacles do not score points but they unblock the board, which is what
-  // actually decides late levels.
-  value += crates * 0.6 + ice * 0.4;
+  const { crates, ice, balloons } = countObstacleHits(board, positions);
+  // Obstacles unblock the board; when the level asks for them, they are goals
+  // and weigh as much as a goal color.
+  const o = ctx.objectives;
+  value += crates * ((o.crate ?? 0) > 0 ? 1.4 : 0.6);
+  value += ice * ((o.ice ?? 0) > 0 ? 1.2 : 0.4);
+  value += balloons * ((o.balloon ?? 0) > 0 ? 1.3 : 0.3);
+  if ((o.duck ?? 0) > 0) value += duckProgress(board, positions) * 1.8;
   value += positions.length * 0.05;
   return value;
 }
@@ -167,15 +198,18 @@ export interface PlayOptions {
 export function playLevel(config: LevelConfig, opts: PlayOptions = {}): PlayResult {
   let board = createBoard(
     config.rows, config.cols,
-    config.crates ?? 0, config.iceCells ?? 0, config.stones ?? 0
+    config.crates ?? 0, config.iceCells ?? 0, config.stones ?? 0,
+    config.balloons ?? 0, config.ducks ?? 0,
   );
+  let objectives: Objectives = { ...(config.goals ?? {}) };
+  const objectivesDone = () => Object.values(objectives).every(v => (v ?? 0) <= 0);
 
   const remaining: Targets | null = opts.targets ? { ...opts.targets } : null;
   const colors = (opts.colors ?? (opts.targets ? (Object.keys(opts.targets) as CellColor[]) : [])) as CellColor[];
   const weights: ColorWeights = opts.weights ?? Object.fromEntries(colors.map(c => [c, remaining?.[c] ?? 1]));
   const cleared: Record<string, number> = {};
 
-  const isWon = () => remaining !== null && colors.every(c => (remaining[c] ?? 0) <= 0);
+  const isWon = () => remaining !== null && colors.every(c => (remaining[c] ?? 0) <= 0) && objectivesDone();
 
   let moves = config.moves;
   let stuck = false;
@@ -187,7 +221,7 @@ export function playLevel(config: LevelConfig, opts: PlayOptions = {}): PlayResu
       break;
     }
 
-    const ctx: ScoreCtx = { colors, weights, remaining, cleared };
+    const ctx: ScoreCtx = { colors, weights, remaining, cleared, objectives };
     const cands: Candidate[] = [];
     const cols = board[0].length;
 
@@ -247,13 +281,14 @@ export function playLevel(config: LevelConfig, opts: PlayOptions = {}): PlayResu
     }
 
     const removed = countByColor(board, best.positions);
-    let next = removeCells(board, best.positions);
-    next = damageCrates(next, best.positions).board;
-    next = damageIce(next, best.positions).board;
-    next = applyGravity(next);
+    const blast = resolveBlast(board, best.positions);
+    const next = blast.final;
+    objectives = applyObjectives(objectives, blast.hits);
     if (best.spawn) {
       const row = Math.min(best.spawn.row, next.length - 1);
-      next[row][best.spawn.col] = createPowerUpCell(row, best.spawn.col, best.spawn.color, best.spawn.type);
+      if (next[row][best.spawn.col].type === 'normal') {
+        next[row][best.spawn.col] = createPowerUpCell(row, best.spawn.col, best.spawn.color, best.spawn.type);
+      }
     }
     board = next;
 

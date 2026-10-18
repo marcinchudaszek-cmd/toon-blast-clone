@@ -82,6 +82,7 @@ export const GameCell: React.FC<GameCellProps> = ({ cell, size, onClick }) => {
     const cracked = (cell.hp ?? 2) <= 1;
     return (
       <div
+        onClick={onClick}
         style={{
           width: size,
           height: size,
@@ -98,6 +99,7 @@ export const GameCell: React.FC<GameCellProps> = ({ cell, size, onClick }) => {
   if (cell.type === 'stone') {
     return (
       <div
+        onClick={onClick}
         style={{
           width: size,
           height: size,
@@ -114,6 +116,7 @@ export const GameCell: React.FC<GameCellProps> = ({ cell, size, onClick }) => {
   if (cell.type === 'balloon') {
     return (
       <div
+        onClick={onClick}
         style={{ width: size, height: size }}
         className="rounded-xl flex items-center justify-center select-none bg-pink-300/25 border border-pink-200/40"
       >
@@ -126,6 +129,7 @@ export const GameCell: React.FC<GameCellProps> = ({ cell, size, onClick }) => {
   if (cell.type === 'duck') {
     return (
       <div
+        onClick={onClick}
         style={{ width: size, height: size, boxShadow: '0 0 12px rgba(253,224,71,0.55)' }}
         className="rounded-xl flex items-center justify-center select-none bg-yellow-200/30 border-2 border-yellow-300/70"
       >

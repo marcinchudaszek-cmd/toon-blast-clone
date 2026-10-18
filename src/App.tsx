@@ -6,7 +6,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { Tutorial, TutorialStep } from './components/Tutorial';
 import { findGroup, findHintGroup } from './game/logic';
 import { PreLevelModal } from './components/PreLevelModal';
-import { START_BOOSTER_INFO } from './game/rewards';
+import { START_BOOSTER_INFO, hardBonus } from './game/rewards';
 import { Cell } from './game/types';
 
 interface Spotlight { top: number; left: number; width: number; height: number }
@@ -41,6 +41,7 @@ export default function App() {
     canClaimDaily, dailyOffer, claimDailyReward,
     canUseSecondChance, useSecondChance, secondChanceMoves, markTutorialSeen,
     beginLevel, streakPowerUps, startBoosterTypes, openStarChest, starChestGoal,
+    buildTownItem, weeklyEvent, weeklyEventDef, claimWeeklyEvent,
   } = useGame();
   const [showConfetti, setShowConfetti] = useState(false);
   const [showShuffle, setShowShuffle] = useState(false);
@@ -182,6 +183,12 @@ export default function App() {
           starChestGoal={starChestGoal}
           onOpenStarChest={openStarChest}
           winStreak={progress.winStreak}
+          townStars={progress.townStars}
+          townBuilt={progress.townBuilt}
+          onBuildTown={buildTownItem}
+          weeklyEvent={weeklyEvent}
+          weeklyEventDef={weeklyEventDef}
+          onClaimEvent={claimWeeklyEvent}
         />
         {achievementToast && (
           <AchievementToast achievement={achievementToast} onDismiss={dismissAchievementToast} />
@@ -369,6 +376,12 @@ export default function App() {
               🎁 Skrzynia gwiazd: {Math.min(progress.starChest, starChestGoal)}/{starChestGoal}
               {progress.starChest >= starChestGoal && ' — do otwarcia w menu!'}
             </p>
+            {levelConfig?.difficulty && (
+              <p className="text-red-100 text-xs mt-1 font-semibold">
+                {levelConfig.difficulty === 'superhard' ? '☠️ Bardzo trudny' : '💀 Trudny'} poziom: +{hardBonus(levelConfig.difficulty).stars} ⭐ do skrzyni
+                {hardBonus(levelConfig.difficulty).boosters > 0 && ' i po boosterze 🔨 ⌛ 💥'}
+              </p>
+            )}
             {isMilestoneWin && (
               <p className="text-cyan-200 text-xs mt-1 font-semibold">
                 🎁 Bonus za etap! +{MILESTONE_BOOSTER_AMOUNT} każdego boostera (🔨 ⏱️ 🌈)

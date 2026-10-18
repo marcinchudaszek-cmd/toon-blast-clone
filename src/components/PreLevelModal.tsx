@@ -41,7 +41,7 @@ export const PreLevelModal: React.FC<Props> = ({
         </div>
         {difficulty && (
           <div className="mt-2 inline-block ml-2 bg-gradient-to-r from-red-500 to-rose-700 text-white text-xs font-black px-3 py-1 rounded-full shadow-lg">
-            {difficulty === 'superhard' ? '☠️ Bardzo trudny' : '💀 Trudny'}
+            {difficulty === 'superhard' ? '☠️ Bardzo trudny · większa nagroda' : '💀 Trudny · większa nagroda'}
           </div>
         )}
         <h2 className="text-white font-black text-2xl mt-2" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.35)' }}>{levelName}</h2>

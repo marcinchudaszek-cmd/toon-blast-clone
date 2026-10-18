@@ -22,6 +22,16 @@ export function streakGift(streak: number): StartBooster[] {
   return [];
 }
 
+/**
+ * Extra reward for beating a marked level: bonus stars towards the star chest
+ * (and the town), and on a "very hard" one a booster of each kind as well.
+ */
+export function hardBonus(difficulty?: 'hard' | 'superhard'): { stars: number; boosters: number } {
+  if (difficulty === 'superhard') return { stars: 4, boosters: 1 };
+  if (difficulty === 'hard') return { stars: 2, boosters: 0 };
+  return { stars: 0, boosters: 0 };
+}
+
 /** Every STAR_CHEST_GOAL stars earned open a star chest. */
 export const STAR_CHEST_GOAL = 20;
 

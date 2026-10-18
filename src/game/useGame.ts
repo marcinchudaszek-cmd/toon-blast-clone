@@ -25,7 +25,26 @@ import { playPop, playPowerUpCreated, playPowerUpActivate, playCombo, playWin, p
 import { hapticBlast, hapticCombo, hapticLose, hapticPowerUp, hapticWin } from './haptics';
 import { ACHIEVEMENTS, AchievementDef, findNewlyUnlocked } from './achievements';
 import { getDailyOffer, isClaimAvailable } from './dailyReward';
-import { StartBooster, START_BOOSTERS, streakGift, STAR_CHEST_GOAL, chestReward, ChestReward } from './rewards';
+import { StartBooster, START_BOOSTERS, streakGift, STAR_CHEST_GOAL, chestReward, ChestReward, hardBonus } from './rewards';
+import { ALL_TOWN_ITEMS, TOWN, isAreaDone, areaReward } from './town';
+import { EventKind, currentEventState, eventForWeek, EVENT_REWARD } from './events';
+
+/** Adds to this week's event if it tracks `kind`. */
+function bumpEvent(p: GameProgress, kind: EventKind, amount: number): GameProgress {
+  if (amount <= 0) return p;
+  const ev = currentEventState(p.weeklyEvent);
+  if (eventForWeek(ev.week).kind !== kind) return p.weeklyEvent === ev ? p : { ...p, weeklyEvent: ev };
+  return { ...p, weeklyEvent: { ...ev, progress: ev.progress + amount } };
+}
+
+/** Adds a reward pack to the inventories. */
+function grant(p: GameProgress, r: { hammer: number; extraMoves: number; colorBomb: number; rocket: number; bomb: number; disco: number }): GameProgress {
+  return {
+    ...p,
+    boosters: { hammer: p.boosters.hammer + r.hammer, extraMoves: p.boosters.extraMoves + r.extraMoves, colorBomb: p.boosters.colorBomb + r.colorBomb },
+    startBoosters: { rocket: p.startBoosters.rocket + r.rocket, bomb: p.startBoosters.bomb + r.bomb, disco: p.startBoosters.disco + r.disco },
+  };
+}
 
 // Booster milestone refill — every Nth completed level rewards the player with
 // extra boosters of every type, so they don't run dry on later, harder boards.
@@ -506,11 +525,12 @@ export function useGame() {
     // Every MILESTONE_INTERVAL completed levels, refill all booster types —
     // keeps players from running dry on bigger/harder boards later in the game.
     const isMilestone = state.level % MILESTONE_INTERVAL === 0;
-    const hammerBonus = (stars === 3 ? 1 : 0) + (isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0);
-    const extraMovesBonus = isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0;
-    const colorBombBonus = isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0;
+    const bonus = hardBonus(config.difficulty);
+    const hammerBonus = (stars === 3 ? 1 : 0) + (isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0) + bonus.boosters;
+    const extraMovesBonus = (isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0) + bonus.boosters;
+    const colorBombBonus = (isMilestone ? MILESTONE_BOOSTER_AMOUNT : 0) + bonus.boosters;
     setProgress(prev => {
-      const next: GameProgress = {
+      let next: GameProgress = {
         ...prev,
         unlockedLevel: Math.max(prev.unlockedLevel, Math.min(state.level + 1, LEVELS.length)),
         bestScores: {
@@ -534,8 +554,10 @@ export function useGame() {
           levelsCompleted: prev.stats.levelsCompleted + 1,
         },
         winStreak: prev.winStreak + 1,
-        starChest: prev.starChest + stars,
+        starChest: prev.starChest + stars + bonus.stars,
+        townStars: prev.townStars + stars + bonus.stars,
       };
+      next = bumpEvent(bumpEvent(next, 'stars', stars + bonus.stars), 'levels', 1);
       saveProgress(next);
       return next;
     });
@@ -557,7 +579,7 @@ export function useGame() {
     if (!delta || delta.seq === lastStatsSeqRef.current) return;
     lastStatsSeqRef.current = delta.seq;
     setProgress(prev => {
-      const next: GameProgress = {
+      let next: GameProgress = {
         ...prev,
         stats: {
           ...prev.stats,
@@ -572,6 +594,11 @@ export function useGame() {
           bestCombo: Math.max(prev.stats.bestCombo, delta.comboReached),
         },
       };
+      next = bumpEvent(next, 'powerUps', delta.powerUpsActivated);
+      next = bumpEvent(next, 'balloons', delta.balloonsPopped);
+      next = bumpEvent(next, 'crates', delta.cratesDestroyed);
+      next = bumpEvent(next, 'ducks', delta.ducksRescued);
+      next = bumpEvent(next, 'combos', delta.combosTriggered);
       saveProgress(next);
       return next;
     });
@@ -625,9 +652,22 @@ export function useGame() {
     });
   }, []);
 
-  const tapCell = useCallback((row: number, col: number) => {
+  const tapCell = (row: number, col: number) => {
+    // The hammer is paid for when it actually lands — arming it and then
+    // cancelling, or tapping a duck, used to waste one.
+    const cell = state.board[row]?.[col];
+    const hammerHits = state.activeBooster === 'hammer' && state.gameStatus === 'playing' && !state.animating && !!cell
+      && (cell.color !== null || ['crate', 'balloon', 'stone'].includes(cell.type));
+    if (hammerHits) {
+      setProgress(prev => {
+        if (prev.boosters.hammer <= 0) return prev;
+        const next = { ...prev, boosters: { ...prev.boosters, hammer: prev.boosters.hammer - 1 } };
+        saveProgress(next);
+        return next;
+      });
+    }
     dispatch({ type: 'TAP_CELL', row, col });
-  }, []);
+  };
 
   /**
    * Leaving a level that was lost, or abandoning one after the first move,
@@ -676,6 +716,41 @@ export function useGame() {
     dispatch({ type: 'BEGIN_LEVEL', powerUps: [...streakPowerUps, ...usable] });
   };
 
+  /**
+   * Builds one town item if there are enough stars. Returns the district
+   * reward when this item finished a district, otherwise null.
+   */
+  const buildTownItem = (id: string): ReturnType<typeof areaReward> | null => {
+    const item = ALL_TOWN_ITEMS.find(it => it.id === id);
+    if (!item || progress.townBuilt.includes(id) || progress.townStars < item.cost) return null;
+    const built = [...progress.townBuilt, id];
+    const areaIdx = TOWN.findIndex(a => a.items.some(it => it.id === id));
+    const done = isAreaDone(TOWN[areaIdx], built);
+    const reward = done ? areaReward(areaIdx) : null;
+    setProgress(prev => {
+      if (prev.townBuilt.includes(id) || prev.townStars < item.cost) return prev;
+      let next: GameProgress = { ...prev, townStars: prev.townStars - item.cost, townBuilt: [...prev.townBuilt, id] };
+      if (reward) next = grant(next, reward);
+      saveProgress(next);
+      return next;
+    });
+    return reward;
+  };
+
+  const weeklyEvent = currentEventState(progress.weeklyEvent);
+  const weeklyEventDef = eventForWeek(weeklyEvent.week);
+  const claimWeeklyEvent = (): boolean => {
+    if (weeklyEvent.claimed || weeklyEvent.progress < weeklyEventDef.goal) return false;
+    setProgress(prev => {
+      const ev = currentEventState(prev.weeklyEvent);
+      if (ev.claimed || ev.progress < eventForWeek(ev.week).goal) return prev;
+      const next = { ...grant(prev, EVENT_REWARD), townStars: prev.townStars + EVENT_REWARD.townStars, weeklyEvent: { ...ev, claimed: true } };
+      saveProgress(next);
+      return next;
+    });
+    return true;
+  };
+
   /** Opens one star chest if enough stars are collected; returns what it gave. */
   const openStarChest = (): ChestReward | null => {
     if (progress.starChest < STAR_CHEST_GOAL) return null;
@@ -719,7 +794,8 @@ export function useGame() {
 
   const useBooster = useCallback((booster: BoosterType) => {
     // Read current count directly from progress state (closure) — no setter needed for the guard
-    setProgress(prev => {
+    // The hammer only arms here; it is charged in tapCell when it hits
+    if (booster !== 'hammer') setProgress(prev => {
       if (prev.boosters[booster] <= 0) return prev;
       const next: GameProgress = {
         ...prev,
@@ -805,5 +881,9 @@ export function useGame() {
     startBoosterTypes: START_BOOSTERS,
     openStarChest,
     starChestGoal: STAR_CHEST_GOAL,
+    buildTownItem,
+    weeklyEvent,
+    weeklyEventDef,
+    claimWeeklyEvent,
   };
 }

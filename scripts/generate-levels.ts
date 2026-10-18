@@ -14,10 +14,94 @@ import { writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { playLevel, setSeed, winRate, type ColorWeights } from './sim/engine';
 import { LEVELS as EXISTING } from '../src/game/levels';
-import type { CellColor, LevelConfig } from '../src/game/types';
+import type { CellColor, LevelConfig, Objectives } from '../src/game/types';
+
+/** Names for the levels added after the original 160 (Polish, like the rest). */
+const NEW_NAMES: string[] = [
+  'Nowy Świt',
+  'Mglista Przystań',
+  'Wyspa Cukierków',
+  'Karmelowa Zatoka',
+  'Lodowe Fiordy',
+  'Port Balonów',
+  'Kacza Zatoka',
+  'Wietrzne Klify',
+  'Latarnia Morska',
+  'Morska Burza',
+  'Koralowy Labirynt',
+  'Zatopione Miasto',
+  'Perłowa Grota',
+  'Wir Głębin',
+  'Królestwo Meduz',
+  'Wrak Galeonu',
+  'Skarb Piratów',
+  'Rafa Syren',
+  'Rów Mariański',
+  'Władca Mórz',
+  'Bambusowy Gaj',
+  'Herbaciane Wzgórza',
+  'Smoczy Most',
+  'Wiśniowy Ogród',
+  'Świątynia Wiatru',
+  'Jadeitowa Pagoda',
+  'Góra Tygrysa',
+  'Rzeka Lampionów',
+  'Ogień Feniksa',
+  'Cesarski Pałac',
+  'Pustynna Oaza',
+  'Wydmy Wiatru',
+  'Złote Piramidy',
+  'Grobowiec Faraona',
+  'Karawana',
+  'Miraż Słońca',
+  'Skorpionowa Dolina',
+  'Burza Piaskowa',
+  'Sfinks',
+  'Dwusetka',
+  'Zielone Bagna',
+  'Grzybowy Las',
+  'Wróżkowa Polana',
+  'Kraina Elfów',
+  'Kryształowa Rzeka',
+  'Zaczarowany Młyn',
+  'Kraina Trolli',
+  'Dąb Wieków',
+  'Leśny Labirynt',
+  'Serce Puszczy',
+  'Lodowiec',
+  'Polarny Wiatr',
+  'Zorza Polarna',
+  'Igloo',
+  'Śnieżna Burza',
+  'Kraina Pingwinów',
+  'Lodowa Korona',
+  'Mroźny Szczyt',
+  'Wieczna Zmarzlina',
+  'Biały Tron',
+  'Miasto Robotów',
+  'Neonowa Ulica',
+  'Fabryka Zębatek',
+  'Laserowy Most',
+  'Cybernetyczne Serce',
+  'Kosmodrom',
+  'Orbita',
+  'Stacja Księżycowa',
+  'Pierścienie Saturna',
+  'Mgławica Oriona',
+  'Gwiezdny Pył',
+  'Droga Mleczna',
+  'Czerwony Karzeł',
+  'Biały Karzeł',
+  'Gwiazda Neutronowa',
+  'Brama Galaktyki',
+  'Ostatnia Gwiazda',
+  'Koniec Czasu',
+  'Cisza Wszechświata',
+  'Prawdziwy Koniec'
+];
 
 const ALL_COLORS: CellColor[] = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
-const TOTAL = 160;
+const TOTAL = 240;
 const HARVEST_TRIALS = 25;
 const SEARCH_TRIALS = 30;
 const SEARCH_STEPS = 8;
@@ -44,21 +128,46 @@ function moveBudget(lvl: number): number {
 
 const isBoss = (lvl: number) => lvl % 25 === 0 || lvl === TOTAL;
 const isBreather = (lvl: number) => !isBoss(lvl) && lvl % 10 === 0;
+/** A marked "hard" level every 8 levels past the tutorial stretch (bigger reward). */
+const isHard = (lvl: number) => lvl > 10 && !isBoss(lvl) && !isBreather(lvl) && lvl % 8 === 5;
+/** Ducks need room to fall: every third level from 15, never on a boss. */
+const hasDucks = (lvl: number) => lvl >= 15 && lvl % 3 === 0 && !isBoss(lvl);
 
 /** Obstacles as a share of the board, capped so they never choke it. */
-function obstacles(lvl: number, rows: number, cols: number): { crates: number; ice: number; stones: number } {
+function obstacles(lvl: number, rows: number, cols: number): { crates: number; ice: number; stones: number; balloons: number; ducks: number } {
   const cells = rows * cols;
-  const ease = isBreather(lvl) ? 0.5 : isBoss(lvl) ? 1.15 : 1;
+  // Ducks need open columns to fall through, so duck levels carry half the clutter
+  const ease = (isBreather(lvl) ? 0.5 : isBoss(lvl) ? 1.15 : 1) * (hasDucks(lvl) ? 0.5 : 1);
   const crateRatio = lvl < 4 ? 0 : Math.min(0.12, 0.02 + 0.1 * (lvl / TOTAL)) * ease;
   const iceRatio = lvl < 12 ? 0 : Math.min(0.1, 0.015 + 0.085 * (lvl / TOTAL)) * ease;
   // Stones enter late and stay sparse: they only yield to a power-up, so a few
   // go a long way, and too many would strand the board.
   const stoneRatio = lvl < 30 ? 0 : Math.min(0.07, 0.01 + 0.06 * ((lvl - 30) / (TOTAL - 30))) * ease;
+  // Balloons arrive early (they are easy and fun), ducks a little later
+  const balloonRatio = lvl < 6 ? 0 : Math.min(0.08, 0.03 + 0.05 * (lvl / TOTAL)) * ease;
+  const ducks = hasDucks(lvl) ? Math.min(4, 2 + Math.floor(lvl / 80)) : 0;
   return {
     crates: Math.round(cells * crateRatio),
     ice: Math.round(cells * iceRatio),
     stones: Math.round(cells * stoneRatio),
+    balloons: Math.round(cells * balloonRatio),
+    ducks,
   };
+}
+
+/**
+ * Obstacle goals rotate so consecutive levels ask for different things. A goal
+ * always covers every obstacle of that kind on the board.
+ */
+function obstacleGoals(lvl: number, o: { crates: number; ice: number; balloons: number; ducks: number }): Objectives {
+  const g: Objectives = {};
+  if (o.ducks > 0) g.duck = o.ducks;
+  if (lvl < 5) return g;
+  const pick = lvl % 4;
+  if (pick === 1 && o.crates > 0) g.crate = o.crates;
+  else if (pick === 2 && o.balloons > 0) g.balloon = o.balloons;
+  else if (pick === 3 && o.ice > 0) g.ice = o.ice;
+  return g;
 }
 
 /** How many colors the level asks for, and their relative goal sizes. */
@@ -89,6 +198,7 @@ function goalShape(lvl: number): { colors: CellColor[]; weights: ColorWeights } 
 function desiredWinRate(lvl: number): number {
   let p = 0.95 - 0.45 * Math.pow((lvl - 1) / (TOTAL - 1), 0.9);
   if (isBoss(lvl)) p -= 0.1;
+  else if (isHard(lvl)) p -= 0.08;
   else if (isBreather(lvl)) p += 0.08;
   return Math.min(0.97, Math.max(0.38, p));
 }
@@ -101,8 +211,11 @@ function quantile(sorted: number[], q: number): number {
 
 function buildLevel(lvl: number, name: string): { config: LevelConfig; measured: number; stuck: number } {
   const { rows, cols } = boardSize(lvl);
-  const moves = moveBudget(lvl);
-  const { crates, ice, stones } = obstacles(lvl, rows, cols);
+  const obs = obstacles(lvl, rows, cols);
+  const { crates, ice, stones, balloons, ducks } = obs;
+  const goals = obstacleGoals(lvl, obs);
+  // Obstacle goals take moves of their own; ducks most of all.
+  const moves = moveBudget(lvl) + (ducks > 0 ? 6 : 0) + (goals.crate || goals.ice || goals.balloon ? 2 : 0);
   const { colors, weights } = goalShape(lvl);
 
   const shape: LevelConfig = {
@@ -111,6 +224,10 @@ function buildLevel(lvl: number, name: string): { config: LevelConfig; measured:
     ...(crates > 0 ? { crates } : {}),
     ...(ice > 0 ? { iceCells: ice } : {}),
     ...(stones > 0 ? { stones } : {}),
+    ...(balloons > 0 ? { balloons } : {}),
+    ...(ducks > 0 ? { ducks } : {}),
+    ...(Object.keys(goals).length ? { goals } : {}),
+    ...(isBoss(lvl) ? { difficulty: 'superhard' as const } : isHard(lvl) ? { difficulty: 'hard' as const } : {}),
   };
 
   // Harvest pass: play the board with no goals and record, per attempt, how far
@@ -175,6 +292,10 @@ function serialize(levels: LevelConfig[]): string {
       l.crates ? `\n    crates: ${l.crates},` : '',
       l.iceCells ? `\n    iceCells: ${l.iceCells},` : '',
       l.stones ? `\n    stones: ${l.stones},` : '',
+      l.balloons ? `\n    balloons: ${l.balloons},` : '',
+      l.ducks ? `\n    ducks: ${l.ducks},` : '',
+      l.goals ? `\n    goals: { ${Object.entries(l.goals).map(([k, v]) => `${k}: ${v}`).join(', ')} },` : '',
+      l.difficulty ? `\n    difficulty: '${l.difficulty}',` : '',
     ].join('');
     return `  {
     level: ${l.level},
@@ -219,7 +340,7 @@ function main() {
   const started = Date.now();
 
   for (const lvl of queue) {
-    const name = EXISTING[lvl - 1]?.name ?? `Level ${lvl}`;
+    const name = EXISTING[lvl - 1]?.name ?? NEW_NAMES[lvl - 161] ?? `Poziom ${lvl}`;
     const { config, measured, stuck } = buildLevel(lvl, name);
     levels.push(config);
     report.push({ lvl, want: desiredWinRate(lvl), got: measured, stuck });

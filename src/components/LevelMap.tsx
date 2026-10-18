@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { LEVELS } from '../game/levels';
 
 interface LevelMapProps {
   totalLevels: number;
@@ -143,6 +144,7 @@ export const LevelMap: React.FC<LevelMapProps> = ({
           const stars = levelStars[lvl] ?? 0;
           const played = bestScores[lvl] !== undefined;
           const boss = isBoss(lvl, totalLevels);
+          const hard = LEVELS[lvl - 1]?.difficulty === 'hard';
           const size = boss ? NODE + 10 : NODE;
 
           return (
@@ -151,6 +153,9 @@ export const LevelMap: React.FC<LevelMapProps> = ({
               className="absolute flex flex-col items-center gap-1"
               style={{ left: p.x - size / 2, top: p.y - size / 2, width: size }}
             >
+              {hard && !locked && (
+                <div className="absolute -top-3 text-sm" title="Trudny poziom">💀</div>
+              )}
               {boss && !locked && (
                 <div className="absolute -top-4">
                   <CrownIcon />
@@ -170,6 +175,7 @@ export const LevelMap: React.FC<LevelMapProps> = ({
                     : 'bg-gradient-to-b from-sky-300 to-blue-500 border-blue-800 text-white active:scale-95'}
                   ${isCurrent ? 'ring-4 ring-white/70 animate-glow scale-110' : ''}
                   ${boss && !locked ? 'shadow-[0_0_18px_rgba(251,191,36,0.6)]' : ''}
+                  ${hard && !locked ? 'ring-2 ring-red-500/80' : ''}
                 `}
               >
                 {locked ? <LockIcon /> : <span className={boss ? 'text-base' : 'text-sm'}>{lvl}</span>}

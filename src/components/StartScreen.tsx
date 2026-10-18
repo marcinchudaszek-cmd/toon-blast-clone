@@ -4,6 +4,10 @@ import { DailyRewardOffer } from '../game/dailyReward';
 import { PlayerStats } from '../game/storage';
 import { LevelMap } from './LevelMap';
 import { ChestReward } from '../game/rewards';
+import { TownModal } from './TownModal';
+import { WeeklyEventCard } from './WeeklyEventCard';
+import { areaReward, currentArea } from '../game/town';
+import { EventState, WeeklyEventDef } from '../game/events';
 
 interface StartScreenProps {
   onStart: () => void;
@@ -25,6 +29,12 @@ interface StartScreenProps {
   starChestGoal: number;
   onOpenStarChest: () => ChestReward | null;
   winStreak: number;
+  townStars: number;
+  townBuilt: string[];
+  onBuildTown: (id: string) => ReturnType<typeof areaReward> | null;
+  weeklyEvent: EventState;
+  weeklyEventDef: WeeklyEventDef;
+  onClaimEvent: () => boolean;
 }
 
 const TIERS = [
@@ -57,7 +67,23 @@ const TIERS = [
   { range: [141, 145], label: 'Wzniesienie',  color: 'border-sky-200/40 bg-sky-200/10' },
   { range: [146, 150], label: 'Sacrum',     color: 'border-amber-300/40 bg-amber-300/10' },
   { range: [151, 155], label: 'Kosmos',     color: 'border-blue-300/40 bg-blue-300/10' },
-  { range: [156, 160], label: 'Koniec',    color: 'border-white/40 bg-white/10' },
+  { range: [156, 160], label: 'Granica',   color: 'border-white/40 bg-white/10' },
+  { range: [161, 165], label: 'Przystań', color: 'border-sky-400/40 bg-sky-400/10' },
+  { range: [166, 170], label: 'Głębiny', color: 'border-cyan-600/40 bg-cyan-600/10' },
+  { range: [171, 175], label: 'Rafa', color: 'border-teal-500/40 bg-teal-500/10' },
+  { range: [176, 180], label: 'Wschód', color: 'border-rose-400/40 bg-rose-400/10' },
+  { range: [181, 185], label: 'Pagoda', color: 'border-emerald-500/40 bg-emerald-500/10' },
+  { range: [186, 190], label: 'Pustynia', color: 'border-amber-400/40 bg-amber-400/10' },
+  { range: [191, 195], label: 'Piramidy', color: 'border-yellow-500/40 bg-yellow-500/10' },
+  { range: [196, 200], label: 'Bagna', color: 'border-lime-600/40 bg-lime-600/10' },
+  { range: [201, 205], label: 'Puszcza', color: 'border-green-600/40 bg-green-600/10' },
+  { range: [206, 210], label: 'Zmarzlina', color: 'border-sky-200/40 bg-sky-200/10' },
+  { range: [211, 215], label: 'Zorza', color: 'border-violet-400/40 bg-violet-400/10' },
+  { range: [216, 220], label: 'Maszyny', color: 'border-slate-500/40 bg-slate-500/10' },
+  { range: [221, 225], label: 'Kosmodrom', color: 'border-indigo-500/40 bg-indigo-500/10' },
+  { range: [226, 230], label: 'Orbita', color: 'border-blue-500/40 bg-blue-500/10' },
+  { range: [231, 235], label: 'Galaktyka', color: 'border-purple-500/40 bg-purple-500/10' },
+  { range: [236, 240], label: 'Koniec', color: 'border-white/40 bg-white/10' },
 ] as const;
 
 function currentTierLabel(lvl: number) {
@@ -87,12 +113,21 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   starChestGoal,
   onOpenStarChest,
   winStreak,
+  townStars,
+  townBuilt,
+  onBuildTown,
+  weeklyEvent,
+  weeklyEventDef,
+  onClaimEvent,
 }) => {
   const [showLevels, setShowLevels] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showDaily, setShowDaily] = useState(false);
   const [chestReward, setChestReward] = useState<ChestReward | null>(null);
   const chestReady = starChest >= starChestGoal;
+  const [showTown, setShowTown] = useState(false);
+  const townArea = currentArea(townBuilt);
+  const canBuildSomething = !!townArea && townArea.items.some(it => !townBuilt.includes(it.id) && townStars >= it.cost);
 
   const clampedUnlocked = Math.min(unlockedLevel, totalLevels);
   const unlockedSet = new Set(unlockedAchievements);
@@ -225,6 +260,19 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             </span>
           </div>
         </button>
+        <button
+          onClick={() => setShowTown(true)}
+          className={`w-full relative rounded-xl border px-4 py-2.5 flex items-center gap-2 text-left transition-all active:scale-95 ${
+            canBuildSomething ? 'bg-gradient-to-b from-emerald-400 to-teal-600 border-teal-800 animate-glow' : 'bg-white/15 border-white/30 backdrop-blur-sm'}`}
+        >
+          <span className="text-2xl">🏘️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold text-xs">Miasteczko{townArea ? ` · ${townArea.icon} ${townArea.name}` : ' · gotowe!'}</p>
+            <p className="text-white/70 text-[11px]">{canBuildSomething ? 'Możesz coś zbudować!' : 'Zbieraj gwiazdki i buduj'}</p>
+          </div>
+          <span className="text-yellow-200 text-xs font-black">⭐ {townStars}</span>
+        </button>
+        <WeeklyEventCard state={weeklyEvent} def={weeklyEventDef} onClaim={onClaimEvent} />
         {winStreak > 0 && (
           <p className="text-orange-100 text-xs font-semibold">🔥 Seria zwycięstw: {winStreak}</p>
         )}
@@ -252,6 +300,8 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <li>🎯 Stuknij grupę 2+ klocków w jednym kolorze, żeby je wysadzić!</li>
           <li>🚀 4 klocki → rakieta &nbsp;💣 5 → bomba &nbsp;🪩 7+ → disco</li>
           <li>🏆 Wykonaj cele, zanim skończą się ruchy!</li>
+          <li>🎈 Balony pękają od wybuchu obok · 🦆 kaczki sprowadź do wody na dole planszy</li>
+          <li>💀 Trudne poziomy dają więcej gwiazdek · ⭐ gwiazdki budują miasteczko</li>
         </ul>
       </div>
 
@@ -353,6 +403,10 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {showTown && (
+        <TownModal townStars={townStars} built={townBuilt} onBuild={onBuildTown} onClose={() => setShowTown(false)} />
       )}
 
       {/* ===== Star Chest Reward ===== */}

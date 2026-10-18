@@ -1,3 +1,5 @@
+import type { EventState } from './events';
+
 const STORAGE_KEY = 'toon-blast-progress';
 
 export interface PlayerStats {
@@ -35,6 +37,9 @@ export interface GameProgress {
   winStreak: number;   // levels won in a row (gift power-ups on the next level)
   starChest: number;   // stars collected towards the next star chest
   chestsOpened: number;
+  townStars: number;   // stars to spend on the town
+  townBuilt: string[]; // town items already built
+  weeklyEvent?: EventState;
 }
 
 const DEFAULT_STATS: PlayerStats = {
@@ -68,6 +73,8 @@ const DEFAULT: GameProgress = {
   winStreak: 0,
   starChest: 0,
   chestsOpened: 0,
+  townStars: 0,
+  townBuilt: [],
 };
 
 export function loadProgress(): GameProgress {
@@ -111,6 +118,12 @@ export function loadProgress(): GameProgress {
       winStreak: typeof p.winStreak === 'number' ? p.winStreak : 0,
       starChest: typeof p.starChest === 'number' ? p.starChest : 0,
       chestsOpened: typeof p.chestsOpened === 'number' ? p.chestsOpened : 0,
+      // Players from before the town get the stars of the levels they already beat
+      townStars: typeof p.townStars === 'number'
+        ? p.townStars
+        : Object.values((p.levelStars ?? {}) as Record<string, number>).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
+      townBuilt: Array.isArray(p.townBuilt) ? p.townBuilt.filter((x: unknown) => typeof x === 'string') : [],
+      weeklyEvent: p.weeklyEvent && typeof p.weeklyEvent.week === 'number' ? p.weeklyEvent : undefined,
     };
   } catch {
     return structuredCloneProgress(DEFAULT);
@@ -143,6 +156,7 @@ function structuredCloneProgress(p: GameProgress): GameProgress {
     achievements: [...p.achievements],
     dailyReward: { ...p.dailyReward },
     startBoosters: { ...p.startBoosters },
+    townBuilt: [...p.townBuilt],
   };
 }
 
