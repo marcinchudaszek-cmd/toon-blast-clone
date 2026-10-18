@@ -48,7 +48,7 @@ export default function App() {
 
   const isIdle = state.gameStatus === 'idle';
   const levelConfig = LEVELS[Math.min(state.level - 1, LEVELS.length - 1)];
-  const levelName = levelConfig?.name ?? 'Unknown';
+  const levelName = levelConfig?.name ?? 'Nieznany';
   const starsEarned = state.gameStatus === 'won' && state.level <= totalLevels
     ? calculateStars(state.moves, levelConfig?.moves ?? 1)
     : 0;
@@ -172,9 +172,9 @@ export default function App() {
   }
 
   const boosters: { key: BoosterType; icon: string; label: string; hint: string }[] = [
-    { key: 'hammer',     icon: '🔨', label: 'Młotek',   hint: 'Tap any block to remove it (free move)' },
-    { key: 'extraMoves', icon: '⌛', label: '+3 ruchy',  hint: 'Adds 3 moves instantly' },
-    { key: 'colorBomb',  icon: '💥', label: 'Color Bomb', hint: 'Removes all blocks of most common color' },
+    { key: 'hammer',     icon: '🔨', label: 'Młotek',   hint: 'Stuknij dowolny klocek, żeby go usunąć (bez zużycia ruchu)' },
+    { key: 'extraMoves', icon: '⌛', label: '+3 ruchy',  hint: 'Od razu dodaje 3 ruchy' },
+    { key: 'colorBomb',  icon: '💥', label: 'Bomba barw', hint: 'Usuwa wszystkie klocki najczęstszego koloru' },
   ];
 
   return (
@@ -203,7 +203,7 @@ export default function App() {
           <button
             onClick={gotoMenu}
             className="absolute left-0 bg-white/20 text-white rounded-full w-9 h-9 flex items-center justify-center hover:bg-white/30 transition-all text-sm border border-white/30 font-bold"
-            title="Back to menu"
+            title="Wróć do menu" aria-label="Wróć do menu"
           >
             ←
           </button>
@@ -258,14 +258,14 @@ export default function App() {
       {state.activeBooster === 'hammer' && (
         <div className="mb-2 relative z-10 bg-yellow-400/20 border border-yellow-400/50 rounded-full px-4 py-1.5 flex items-center gap-2">
           <span className="text-yellow-300 text-sm animate-pulse">🔨</span>
-          <span className="text-yellow-100 text-xs font-semibold">Tap any block to remove it</span>
+          <span className="text-yellow-100 text-xs font-semibold">Stuknij klocek, żeby go usunąć</span>
           <button onClick={cancelBooster} className="text-yellow-300/70 hover:text-yellow-200 text-xs ml-1">✕</button>
         </div>
       )}
 
       {/* Targets */}
       <div className="w-full max-w-md mb-3 relative z-10">
-        <p className="text-white/60 text-xs text-center mb-2 uppercase tracking-widest font-semibold">🎯 Targets</p>
+        <p className="text-white/60 text-xs text-center mb-2 uppercase tracking-widest font-semibold">🎯 Cele</p>
         <TargetPanel targets={state.targets} />
       </div>
 
@@ -288,7 +288,7 @@ export default function App() {
       {/* Moves remaining bar */}
       <div className="mt-4 relative z-10 flex flex-col items-center gap-1">
         <p className="text-white/60 text-xs uppercase tracking-wide font-semibold">
-          {state.moves} moves remaining
+          Pozostało ruchów: {state.moves}
         </p>
         <div className="flex gap-1 flex-wrap justify-center max-w-xs">
           {Array.from({ length: Math.min(state.moves, 30) }, (_, i) => (
@@ -318,7 +318,7 @@ export default function App() {
 
       {/* Win Modal */}
       {state.gameStatus === 'won' && state.level <= totalLevels && (
-        <Modal title="Level Complete!" emoji="⭐" subtitle={`You blasted through "${levelName}"!`} bgGradient="from-yellow-500 to-orange-600">
+        <Modal title="Poziom ukończony!" emoji="⭐" subtitle={`Poziom „${levelName}” zaliczony!`} bgGradient="from-yellow-500 to-orange-600">
           <div className="bg-white/20 rounded-2xl p-4 mb-2">
             <div className="flex justify-center gap-2 text-4xl mb-3">
               {[0, 1, 2].map(i => (
@@ -326,32 +326,32 @@ export default function App() {
                   style={{ animationDelay: `${i * 150}ms` }}>⭐</span>
               ))}
             </div>
-            <p className="text-white/80 text-sm">Score</p>
+            <p className="text-white/80 text-sm">Wynik</p>
             <p className="text-white font-black text-2xl">{state.score.toLocaleString()}</p>
             {starsEarned === 3 && (
-              <p className="text-yellow-200 text-xs mt-1">🔨 +1 Hammer earned!</p>
+              <p className="text-yellow-200 text-xs mt-1">🔨 +1 młotek w nagrodę!</p>
             )}
             {isMilestoneWin && (
               <p className="text-cyan-200 text-xs mt-1 font-semibold">
-                🎁 Milestone bonus! +{MILESTONE_BOOSTER_AMOUNT} of every booster (🔨 ⏱️ 🌈)
+                🎁 Bonus za etap! +{MILESTONE_BOOSTER_AMOUNT} każdego boostera (🔨 ⏱️ 🌈)
               </p>
             )}
           </div>
           {state.level < totalLevels ? (
-            <ModalButton onClick={nextLevel} variant="primary">Next Level →</ModalButton>
+            <ModalButton onClick={nextLevel} variant="primary">Następny poziom →</ModalButton>
           ) : (
-            <ModalButton onClick={nextLevel} variant="primary">🏆 Finish Game!</ModalButton>
+            <ModalButton onClick={nextLevel} variant="primary">🏆 Zakończ grę!</ModalButton>
           )}
-          <ModalButton onClick={restartLevel} variant="secondary">↺ Replay Level</ModalButton>
-          <ModalButton onClick={gotoMenu} variant="secondary">☰ Back to Menu</ModalButton>
+          <ModalButton onClick={restartLevel} variant="secondary">↺ Zagraj ponownie</ModalButton>
+          <ModalButton onClick={gotoMenu} variant="secondary">☰ Menu</ModalButton>
         </Modal>
       )}
 
       {/* All Levels Complete */}
       {state.gameStatus === 'won' && state.level > totalLevels && (
-        <Modal title="YOU WIN!" emoji="🏆" subtitle={`You completed all ${totalLevels} levels! Amazing!`} bgGradient="from-yellow-400 to-amber-600">
+        <Modal title="WYGRANA!" emoji="🏆" subtitle={`Ukończono wszystkie ${totalLevels} poziomów! Niesamowite!`} bgGradient="from-yellow-400 to-amber-600">
           <div className="bg-white/20 rounded-2xl p-4 mb-2">
-            <p className="text-white font-bold">Total Score</p>
+            <p className="text-white font-bold">Łączny wynik</p>
             <p className="text-yellow-200 font-black text-3xl">{state.score.toLocaleString()}</p>
             <div className="flex justify-center gap-1 mt-2 text-2xl">
               {['🌟','🎉','🏆','🎊','🌟'].map((e, i) => (
@@ -359,13 +359,13 @@ export default function App() {
               ))}
             </div>
           </div>
-          <ModalButton onClick={startGame} variant="primary">🎮 Play Again!</ModalButton>
+          <ModalButton onClick={startGame} variant="primary">🎮 Zagraj od nowa!</ModalButton>
         </Modal>
       )}
 
       {/* Lose Modal */}
       {state.gameStatus === 'lost' && (
-        <Modal title="No More Moves!" emoji="💔" subtitle="You ran out of moves. You can do it!" bgGradient="from-red-600 to-rose-800">
+        <Modal title="Koniec ruchów!" emoji="💔" subtitle="Zabrakło ruchów. Dasz radę!" bgGradient="from-red-600 to-rose-800">
           {canUseSecondChance && (
             <>
               <div className="bg-white/20 rounded-2xl p-3 mb-2">
@@ -377,13 +377,13 @@ export default function App() {
               <ModalButton onClick={useSecondChance} variant="primary">
                 ⌛ +{secondChanceMoves} ruchów (×{progress.boosters.extraMoves})
               </ModalButton>
-              <ModalButton onClick={restartLevel} variant="secondary">↺ Try Again</ModalButton>
+              <ModalButton onClick={restartLevel} variant="secondary">↺ Spróbuj ponownie</ModalButton>
             </>
           )}
           {!canUseSecondChance && (
-            <ModalButton onClick={restartLevel} variant="primary">↺ Try Again</ModalButton>
+            <ModalButton onClick={restartLevel} variant="primary">↺ Spróbuj ponownie</ModalButton>
           )}
-          <ModalButton onClick={gotoMenu} variant="secondary">☰ Back to Menu</ModalButton>
+          <ModalButton onClick={gotoMenu} variant="secondary">☰ Menu</ModalButton>
         </Modal>
       )}
 
@@ -445,7 +445,7 @@ function AchievementToast({ achievement, onDismiss }: { achievement: { emoji: st
         <div className="text-3xl animate-bounce">{achievement.emoji}</div>
         <div className="min-w-0">
           <p className="text-amber-950/70 text-[10px] font-black uppercase tracking-widest leading-none mb-0.5">
-            🏆 Achievement Unlocked
+            🏆 Nowe osiągnięcie
           </p>
           <p className="text-amber-950 font-black text-sm leading-tight truncate">{achievement.title}</p>
           <p className="text-amber-900/80 text-xs leading-tight truncate">{achievement.description}</p>

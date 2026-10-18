@@ -1,18 +1,20 @@
 {
   "name": "ToonBlast",
   "short_name": "ToonBlast",
-  "description": "Colorful block-blast puzzle game",
-  "start_url": "/",
+  "description": "Kolorowa gra logiczna: stukaj grupy klocków i wykonuj cele poziomów",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#1e3a8a",
   "theme_color": "#1e40af",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "./icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "lang": "pl",
+  "scope": "./"
 }

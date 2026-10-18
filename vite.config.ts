@@ -30,10 +30,15 @@ export default defineConfig(({ mode }) => {
       port: Number(process.env.PORT) || 5173,
     },
     build: {
+      // Separate output dirs so a web build can't overwrite the Android one
+      // (Capacitor's webDir is dist/).
+      outDir: isAndroid ? 'dist' : 'dist-web',
       // The web distribution is a single HTML file, so the bundled fonts (largest
       // is ~30 KB) must inline as data URIs rather than land as separate assets.
       assetsInlineLimit: 64 * 1024,
     },
-    base: isAndroid ? './' : '/',
+    // Relative in both builds: the web version lives in a subfolder of the
+    // portfolio site (beagleapps.pl/games/toonblast/), not at a domain root.
+    base: './',
   };
 });
